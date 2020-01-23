@@ -1,7 +1,3 @@
-// MIT License
-//
-// Copyright (c) 2020 UAVCAN Development Team
-//
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
 // documentation files (the "Software"), to deal in the Software without restriction, including without limitation
 // the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
@@ -15,27 +11,43 @@
 // OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
+// Copyright (c) 2020 UAVCAN Development Team
 // Authors: Pavel Kirienko <pavel.kirienko@zubax.com>
 
 #include "o1heap.h"
-#include <string.h>
 #include <assert.h>
 #include <stdbool.h>
 
-#ifndef __STDC_VERSION__
-#   error "Unsupported language: ISO C99 or a newer version is required."
-#endif
+// ---------------------------------------- BUILD CONFIGURATION OPTIONS ----------------------------------------
 
+/// The assertion macro defaults to the standard assert().
+/// It can be overridden to manually suppress assertion checks or use a different error handling policy.
 #ifndef O1HEAP_ASSERT
 #   define O1HEAP_ASSERT(x) assert(x)
 #endif
 
+/// Branch probability annotations are used to improve the worst case execution time (WCET). They are entirely optional.
+/// A stock implementation is provided for GCC/Clang; for other compilers it defaults to nothing.
+/// If you are using a different compiler, consider overriding this value.
 #ifndef O1HEAP_LIKELY
-#   define O1HEAP_LIKELY(x) x
+#   if defined(__GNUC__) || defined(__clang__)
+#       define O1HEAP_LIKELY(x) __builtin_expect((x), 1)
+#   else
+#       define O1HEAP_LIKELY(x) x
+#   endif
 #endif
 
-#ifndef O1HEAP_UNLIKELY
-#   define O1HEAP_UNLIKELY(x) x
+/// This option is used for testing only. Do not use in production.
+#if defined(O1HEAP_EXPOSE_INTERNALS) && O1HEAP_EXPOSE_INTERNALS
+#   define O1HEAP_PRIVATE
+#else
+#   define O1HEAP_PRIVATE static inline
+#endif
+
+// ---------------------------------------- INTERNAL DEFINITIONS ----------------------------------------
+
+#if !defined(__STDC_VERSION__) || (__STDC_VERSION__ < 199901L)
+#   error "Unsupported language: ISO C99 or a newer version is required."
 #endif
 
 #if __STDC_VERSION__ < 201112L
@@ -53,6 +65,14 @@
 static_assert((O1HEAP_ALIGNMENT & (O1HEAP_ALIGNMENT - 1U)) == 0U, "The alignment shall be an integer power of 2");
 static_assert((SMALLEST_BLOCK_SIZE & (SMALLEST_BLOCK_SIZE - 1U)) == 0U,
               "The smallest block size shall be an integer power of 2");
+
+// We must forward-declare the internal functions to facilitate their testing.
+O1HEAP_PRIVATE bool isPowerOf2(const size_t x);
+O1HEAP_PRIVATE uint8_t log2Floor(const size_t x);
+O1HEAP_PRIVATE uint8_t log2Ceil(const size_t x);
+O1HEAP_PRIVATE uint8_t computeBinIndex(const size_t block_size);
+O1HEAP_PRIVATE size_t pow2(const uint8_t power);
+O1HEAP_PRIVATE void invokeHook(const O1HeapHook hook);
 
 typedef struct Block Block;
 
@@ -84,13 +104,13 @@ struct O1HeapInstance
 };
 
 /// True if the argument is an integer power of two or zero.
-static inline bool isPowerOf2(const size_t x)
+O1HEAP_PRIVATE bool isPowerOf2(const size_t x)
 {
     return (x & (x - 1U)) == 0U;
 }
 
 /// Special case: if the argument is zero, returns zero.
-static inline uint8_t log2Floor(const size_t x)
+O1HEAP_PRIVATE uint8_t log2Floor(const size_t x)
 {
     size_t tmp = x;
     uint8_t y = 0;
@@ -103,12 +123,12 @@ static inline uint8_t log2Floor(const size_t x)
 }
 
 /// Special case: if the argument is zero, returns zero.
-static inline uint8_t log2Ceil(const size_t x)
+O1HEAP_PRIVATE uint8_t log2Ceil(const size_t x)
 {
-    return log2Floor(x) + (isPowerOf2(x) ? 0U : 1U);
+    return (uint8_t) (log2Floor(x) + (isPowerOf2(x) ? 0U : 1U));
 }
 
-static inline uint8_t computeBinIndex(const size_t block_size)
+O1HEAP_PRIVATE uint8_t computeBinIndex(const size_t block_size)
 {
     O1HEAP_ASSERT(block_size >= SMALLEST_BLOCK_SIZE);
     O1HEAP_ASSERT(block_size % SMALLEST_BLOCK_SIZE == 0U);
@@ -118,18 +138,20 @@ static inline uint8_t computeBinIndex(const size_t block_size)
 }
 
 /// Raise 2 into the specified power.
-static inline size_t pow2(const uint8_t power)
+O1HEAP_PRIVATE size_t pow2(const uint8_t power)
 {
     return ((size_t) 1U) << power;
 }
 
-static inline void invokeHook(const O1HeapHook hook)
+O1HEAP_PRIVATE void invokeHook(const O1HeapHook hook)
 {
     if (O1HEAP_LIKELY(hook != NULL))
     {
         hook();
     }
 }
+
+// ---------------------------------------- PUBLIC API IMPLEMENTATION ----------------------------------------
 
 O1HeapInstance* o1heapInit(void* const base,
                            const size_t size,
@@ -151,9 +173,6 @@ O1HeapInstance* o1heapInit(void* const base,
     if ((adjusted_base != NULL) &&
         (adjusted_size >= (sizeof(O1HeapInstance) + SMALLEST_BLOCK_SIZE + O1HEAP_ALIGNMENT * 2U)))
     {
-        // Zero out the entire arena for extra paranoia.
-        (void) memset(adjusted_base, 0, adjusted_size);
-
         // Allocate the heap metadata structure in the beginning of the arena.
         O1HEAP_ASSERT(((size_t) adjusted_base) % sizeof(O1HeapInstance*) == 0U);
         out = (O1HeapInstance*) (void*) adjusted_base;
@@ -213,7 +232,7 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
     {
         // Add the header size and align the allocation size to the power of 2.
         // See "Timing-Predictable Memory Allocation In Hard Real-Time Systems", Joerg Herter, page 27:
-        // alignment to the power of 2 is required to guarantee that the worst case external fragmentation is bounded.
+        // alignment to the power of 2 guarantees that the worst case external fragmentation is bounded.
         // This comes at the expense of higher memory utilization but it is acceptable.
         const size_t block_size = pow2(log2Ceil(amount + O1HEAP_ALIGNMENT));
         O1HEAP_ASSERT(block_size >= SMALLEST_BLOCK_SIZE);
@@ -253,7 +272,6 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
             {
                 Block* const new_blk = (Block*) (void*) (((uint8_t*) blk) + leftover);
                 O1HEAP_ASSERT(((size_t) new_blk) % O1HEAP_ALIGNMENT == 0U);
-                (void) memset(new_blk, 0, sizeof(Block));
                 new_blk->header.size = leftover;
                 new_blk->header.used = false;
                 // Insert the new split-off block into the doubly-linked list of blocks. Needed for merging later.
@@ -288,11 +306,6 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
         }
 
         invokeHook(handle->critical_section_leave);
-
-        if (O1HEAP_LIKELY(out != NULL))
-        {
-            (void) memset(out, 0, block_size - O1HEAP_ALIGNMENT);
-        }
     }
     else
     {
