@@ -37,9 +37,11 @@
 #   endif
 #endif
 
-/// This option is used to facilitate unit testing. It is not recommended for use in production.
-#ifndef O1HEAP_SELF_TEST
-#   define O1HEAP_SELF_TEST 0
+/// This option is used for testing only. Do not use in production.
+#if defined(O1HEAP_EXPOSE_INTERNALS) && O1HEAP_EXPOSE_INTERNALS
+#   define O1HEAP_PRIVATE
+#else
+#   define O1HEAP_PRIVATE static inline
 #endif
 
 // ---------------------------------------- INTERNAL DEFINITIONS ----------------------------------------
@@ -63,6 +65,14 @@
 static_assert((O1HEAP_ALIGNMENT & (O1HEAP_ALIGNMENT - 1U)) == 0U, "The alignment shall be an integer power of 2");
 static_assert((SMALLEST_BLOCK_SIZE & (SMALLEST_BLOCK_SIZE - 1U)) == 0U,
               "The smallest block size shall be an integer power of 2");
+
+// We must forward-declare the internal functions to facilitate their testing.
+O1HEAP_PRIVATE bool isPowerOf2(const size_t x);
+O1HEAP_PRIVATE uint8_t log2Floor(const size_t x);
+O1HEAP_PRIVATE uint8_t log2Ceil(const size_t x);
+O1HEAP_PRIVATE uint8_t computeBinIndex(const size_t block_size);
+O1HEAP_PRIVATE size_t pow2(const uint8_t power);
+O1HEAP_PRIVATE void invokeHook(const O1HeapHook hook);
 
 typedef struct Block Block;
 
@@ -94,13 +104,13 @@ struct O1HeapInstance
 };
 
 /// True if the argument is an integer power of two or zero.
-static inline bool isPowerOf2(const size_t x)
+O1HEAP_PRIVATE bool isPowerOf2(const size_t x)
 {
     return (x & (x - 1U)) == 0U;
 }
 
 /// Special case: if the argument is zero, returns zero.
-static inline uint8_t log2Floor(const size_t x)
+O1HEAP_PRIVATE uint8_t log2Floor(const size_t x)
 {
     size_t tmp = x;
     uint8_t y = 0;
@@ -113,12 +123,12 @@ static inline uint8_t log2Floor(const size_t x)
 }
 
 /// Special case: if the argument is zero, returns zero.
-static inline uint8_t log2Ceil(const size_t x)
+O1HEAP_PRIVATE uint8_t log2Ceil(const size_t x)
 {
     return (uint8_t) (log2Floor(x) + (isPowerOf2(x) ? 0U : 1U));
 }
 
-static inline uint8_t computeBinIndex(const size_t block_size)
+O1HEAP_PRIVATE uint8_t computeBinIndex(const size_t block_size)
 {
     O1HEAP_ASSERT(block_size >= SMALLEST_BLOCK_SIZE);
     O1HEAP_ASSERT(block_size % SMALLEST_BLOCK_SIZE == 0U);
@@ -128,12 +138,12 @@ static inline uint8_t computeBinIndex(const size_t block_size)
 }
 
 /// Raise 2 into the specified power.
-static inline size_t pow2(const uint8_t power)
+O1HEAP_PRIVATE size_t pow2(const uint8_t power)
 {
     return ((size_t) 1U) << power;
 }
 
-static inline void invokeHook(const O1HeapHook hook)
+O1HEAP_PRIVATE void invokeHook(const O1HeapHook hook)
 {
     if (O1HEAP_LIKELY(hook != NULL))
     {
@@ -321,64 +331,3 @@ void o1heapFree(O1HeapInstance* const handle, void* const pointer)
         O1HEAP_ASSERT(((size_t) pointer) % O1HEAP_ALIGNMENT == 0U);
     }
 }
-
-// ---------------------------------------- SELF TEST FUNCTION ----------------------------------------
-
-#if O1HEAP_SELF_TEST
-
-void o1heapSelfTest(void);
-
-void o1heapSelfTest(void)
-{
-    O1HEAP_ASSERT(isPowerOf2(0));     // Special case.
-    O1HEAP_ASSERT(isPowerOf2(1));     // 2**0
-    O1HEAP_ASSERT(isPowerOf2(2));     // 2**1
-    O1HEAP_ASSERT(!isPowerOf2(3));
-    O1HEAP_ASSERT(isPowerOf2(4));
-    O1HEAP_ASSERT(!isPowerOf2(5));
-    O1HEAP_ASSERT(!isPowerOf2(6));
-    O1HEAP_ASSERT(!isPowerOf2(7));
-    O1HEAP_ASSERT(isPowerOf2(8));
-    O1HEAP_ASSERT(!isPowerOf2(9));
-
-    O1HEAP_ASSERT(log2Floor(0) == 0);
-    O1HEAP_ASSERT(log2Floor(1) == 0);
-    O1HEAP_ASSERT(log2Floor(2) == 1);
-    O1HEAP_ASSERT(log2Floor(3) == 1);
-    O1HEAP_ASSERT(log2Floor(4) == 2);
-    O1HEAP_ASSERT(log2Floor(30) == 4);
-    O1HEAP_ASSERT(log2Floor(60) == 5);
-    O1HEAP_ASSERT(log2Floor(64) == 6);
-
-    O1HEAP_ASSERT(log2Ceil(0) == 0);
-    O1HEAP_ASSERT(log2Ceil(1) == 0);
-    O1HEAP_ASSERT(log2Ceil(2) == 1);
-    O1HEAP_ASSERT(log2Ceil(3) == 2);
-    O1HEAP_ASSERT(log2Ceil(4) == 2);
-    O1HEAP_ASSERT(log2Ceil(30) == 5);
-    O1HEAP_ASSERT(log2Ceil(60) == 6);
-    O1HEAP_ASSERT(log2Ceil(64) == 6);
-
-    O1HEAP_ASSERT(pow2(0) == 1);
-    O1HEAP_ASSERT(pow2(1) == 2);
-    O1HEAP_ASSERT(pow2(2) == 4);
-    O1HEAP_ASSERT(pow2(3) == 8);
-    O1HEAP_ASSERT(pow2(4) == 16);
-    O1HEAP_ASSERT(pow2(5) == 32);
-    O1HEAP_ASSERT(pow2(6) == 64);
-    O1HEAP_ASSERT(pow2(7) == 128);
-    O1HEAP_ASSERT(pow2(8) == 256);
-    O1HEAP_ASSERT(pow2(9) == 512);
-
-    O1HEAP_ASSERT(computeBinIndex(SMALLEST_BLOCK_SIZE * 1U) == 0);
-    O1HEAP_ASSERT(computeBinIndex(SMALLEST_BLOCK_SIZE * 2U) == 1);
-    O1HEAP_ASSERT(computeBinIndex(SMALLEST_BLOCK_SIZE * 3U) == 2);
-    O1HEAP_ASSERT(computeBinIndex(SMALLEST_BLOCK_SIZE * 4U) == 2);
-    O1HEAP_ASSERT(computeBinIndex(SMALLEST_BLOCK_SIZE * 5U) == 3);
-    O1HEAP_ASSERT(computeBinIndex(SMALLEST_BLOCK_SIZE * 6U) == 3);
-    O1HEAP_ASSERT(computeBinIndex(SMALLEST_BLOCK_SIZE * 7U) == 3);
-    O1HEAP_ASSERT(computeBinIndex(SMALLEST_BLOCK_SIZE * 8U) == 3);
-    O1HEAP_ASSERT(computeBinIndex(SMALLEST_BLOCK_SIZE * 9U) == 4);
-}
-
-#endif
