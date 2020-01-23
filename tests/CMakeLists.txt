@@ -38,5 +38,5 @@ set(common_sources catch/main.cpp ../o1heap/o1heap.c)
 
 # Private function test (not available via the public API).
 add_executable(test_private ${common_sources} test_private.cpp)
-target_compile_definitions(test_private PUBLIC O1HEAP_EXPOSE_INTERNALS=1)
+target_compile_definitions(test_private PUBLIC O1HEAP_SELF_TEST=1)
 target_compile_features(test_private PRIVATE c_std_99)
