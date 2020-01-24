@@ -24,7 +24,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wconversion -Wtype-limits")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wsign-conversion -Wcast-align -Wmissing-declarations")
 
 # C++ options
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Werror -pedantic")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wdouble-promotion -Wswitch-enum -Wfloat-equal -Wundef")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wconversion -Wsign-promo")
@@ -37,13 +37,16 @@ include_directories(catch ../o1heap)
 set(common_sources catch/main.cpp ../o1heap/o1heap.c)
 
 # Upon generation, all tests can be run via run_all_tests.sh.
+set(run_all_tests_script "${CMAKE_BINARY_DIR}/run_all_tests.sh")
+file(REMOVE ${run_all_tests_script})
+
 function(add_test name files compile_definitions compile_features flags)
     add_executable(${name} ${common_sources} ${files})
     target_compile_definitions(${name} PUBLIC ${compile_definitions})
     target_compile_features(${name} PUBLIC ${compile_features})
     set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${flags}" LINK_FLAGS "${flags}")
 
-    file(APPEND ${CMAKE_BINARY_DIR}/run_all_tests.sh "./${name} --rng-seed time || exit 1\n")
+    file(APPEND ${run_all_tests_script} "./${name} --rng-seed time || exit 1\n")
 endfunction()
 
 function(add_test_matrix name files compile_definitions)
