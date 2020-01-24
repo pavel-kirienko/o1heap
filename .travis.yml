@@ -29,15 +29,17 @@ matrix:
         apt:
           sources:
             - ubuntu-toolchain-r-test
-          packages:
-            - libstdc++-7-dev:i386
+          packages:  # Install a newer GCC because https://stackoverflow.com/a/51512150/1007777.
+            - g++-9
+            - g++-9-multilib
+            - gcc-9-multilib
             - linux-libc-dev:i386
             - libc6-dev-i386
+            - libstdc++-7-dev:i386
       script:
         - wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sudo ./llvm.sh 9
         - clang++-9 -E -x c++ - -v < /dev/null    # Print the Clang configuration for troubleshooting purposes
-        # https://stackoverflow.com/a/51512150/1007777
-        - cmake -DCMAKE_C_COMPILER=clang-9 -DCMAKE_CXX_COMPILER=clang++-9 -DCMAKE_CXX_FLAGS=-stdlib=libc++ tests
+        - cmake -DCMAKE_C_COMPILER=clang-9 -DCMAKE_CXX_COMPILER=clang++-9 tests
         - make VERBOSE=1
         - sh run_all_tests.sh
 
