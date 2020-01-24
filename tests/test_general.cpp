@@ -17,6 +17,7 @@
 #include "internal.hpp"
 #include <catch.hpp>
 #include <iostream>
+#include <random>
 #include <array>
 
 namespace cs
@@ -60,6 +61,14 @@ std::enable_if_t<std::is_integral_v<T>, std::uint8_t> log2Floor(const T& x)
         y++;
     }
     return y;
+}
+
+std::uint8_t getRandomByte()
+{
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    static std::uniform_int_distribution<std::uint16_t> dis(0, 255U);
+    return static_cast<std::uint8_t>(dis(gen));
 }
 
 auto init(void* const       base,
@@ -121,7 +130,7 @@ TEST_CASE("General, init")
     std::cout << "sizeof(void*)=" << sizeof(void*) << "; sizeof(O1HeapInstance)=" << sizeof(internal::O1HeapInstance)
               << std::endl;
 
-    alignas(128) std::array<std::uint8_t, 1024U> arena{};
+    alignas(128) std::array<std::uint8_t, 10'000U> arena{};
 
     REQUIRE(nullptr == init(nullptr, 0U, nullptr, nullptr));
     REQUIRE(nullptr == init(nullptr, 0U, &cs::enter, &cs::leave));
@@ -135,8 +144,10 @@ TEST_CASE("General, init")
     {
         for (auto size = 99U; size < 5100U; size += 111U)
         {
+            REQUIRE(arena.size() >= size);
+            std::generate(std::begin(arena), std::end(arena), getRandomByte);
             auto heap = init(arena.data() + offset,
-                             size,
+                             size - offset,
                              (offset % 2U == 0U) ? &cs::enter : nullptr,
                              (offset % 4U == 0U) ? &cs::leave : nullptr);
             if (heap == nullptr)
@@ -154,4 +165,9 @@ TEST_CASE("General, init")
 
     REQUIRE(cs::g_cnt_enter == 0);
     REQUIRE(cs::g_cnt_leave == 0);
+}
+
+TEST_CASE("General, allocate")
+{
+
 }
