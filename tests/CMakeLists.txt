@@ -14,7 +14,7 @@
 # Copyright (c) 2020 UAVCAN Development Team
 # Authors: Pavel Kirienko <pavel.kirienko@zubax.com>
 
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.12)
 project(o1heap_tests C CXX)
 
 # C options
