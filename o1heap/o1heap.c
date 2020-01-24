@@ -53,11 +53,10 @@
 
 #if __STDC_VERSION__ < 201112L
 // Intentional violation of MISRA: static assertion macro cannot be replaced with a function definition.
-#    define static_assert(x, ...) \
-        typedef char _static_assert_glue(_static_assertion_, __LINE__)[(x) ? 1 : -1]  // NOSONAR
-#    define _static_assert_glue(a, b) _static_assert_glue_impl(a, b)                  // NOSONAR
+#    define static_assert(x, ...) typedef char _static_assert_gl(_static_assertion_, __LINE__)[(x) ? 1 : -1]  // NOSONAR
+#    define _static_assert_gl(a, b) _static_assert_gl_impl(a, b)                                              // NOSONAR
 // Intentional violation of MISRA: the paste operator ## cannot be avoided in this context.
-#    define _static_assert_glue_impl(a, b) a##b                                       // NOSONAR
+#    define _static_assert_gl_impl(a, b) a##b  // NOSONAR
 #endif
 
 #define SMALLEST_FRAGMENT_SIZE (O1HEAP_ALIGNMENT * 2U)

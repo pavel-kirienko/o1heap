@@ -39,6 +39,39 @@ Allocate and deallocate memory using `o1heapAllocate(...)` and `o1heapDeallocate
 Their semantics are compatible with `malloc()` and `free()` plus additional behavioral guarantees
 (constant timing and bounded fragmentation).
 
+## Development
+
+### Coding conventions
+
+The codebase shall follow the [Zubax C/C++ Coding Conventions](https://kb.zubax.com/x/84Ah).
+The compliance is enforced with the help of the scripts located under `scripts/`.
+
+### Testing
+
+Please refer to the continuous integration configuration to see how to invoke the tests.
+
+### Static analysis
+
+Find the respective scripts under `scripts/`.
+
+### MISRA compliance
+
+MISRA compliance is enforced with the help of the following tools:
+
+- Clang-Tidy, invokable via the script under `scripts/`.
+- SonarCloud, invoked as part of the continuous integration build.
+
+Every intentional deviation shall be documented and justified in-place using the following notation,
+followed by the appropriate static analyser warning suppression statement:
+
+```c
+// Intentional violation of MISRA: <valid reason here>
+// NOSONAR
+// NOLINT
+```
+
+The list of intentional deviations can be obtained by simply searching the codebase for the above comments.
+
 ## License
 
 The library is available under the terms of the MIT License.
