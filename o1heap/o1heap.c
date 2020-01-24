@@ -16,7 +16,6 @@
 
 #include "o1heap.h"
 #include <assert.h>
-#include <string.h>
 
 // ---------------------------------------- BUILD CONFIGURATION OPTIONS ----------------------------------------
 
@@ -176,7 +175,6 @@ O1HeapInstance* o1heapInit(void* const base,
         out = (O1HeapInstance*) (void*) adjusted_base;
         adjusted_base += sizeof(O1HeapInstance);
         adjusted_size -= sizeof(O1HeapInstance);
-        (void) memset(out, 0, sizeof(O1HeapInstance));
         out->critical_section_enter = critical_section_enter;
         out->critical_section_leave = critical_section_leave;
 

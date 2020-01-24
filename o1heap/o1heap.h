@@ -19,9 +19,9 @@
 #ifndef O1HEAP_H_INCLUDED
 #define O1HEAP_H_INCLUDED
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {

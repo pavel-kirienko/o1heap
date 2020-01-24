@@ -1,0 +1,24 @@
+---
+Checks: >-
+  boost-*,
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  cppcoreguidelines-*,
+  google-*,
+  hicpp-*,
+  llvm-*,
+  misc-*,
+  modernize-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  -*-magic-numbers,
+  -google-readability-todo,
+  -readability-avoid-const-params-in-decls,
+  -llvm-header-guard,
+WarningsAsErrors: true
+HeaderFilterRegex: '.*'
+AnalyzeTemporaryDtors: false
+FormatStyle: file
+...
