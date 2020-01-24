@@ -19,6 +19,7 @@
 
 #include <o1heap.h>
 #include <array>
+#include <limits>
 #include <cstdarg>
 #include <cstddef>
 #include <cstdint>
@@ -36,7 +37,11 @@ std::size_t  pow2(const std::uint8_t power);
 void         invokeHook(const O1HeapHook hook);
 }
 
-constexpr auto SmallestFragmentSize = O1HEAP_ALIGNMENT * 2U;
+constexpr auto FragmentSizeMin = O1HEAP_ALIGNMENT * 2U;
+constexpr auto FragmentSizeMax = (std::numeric_limits<std::size_t>::max() >> 1U) + 1U;
+
+static_assert((FragmentSizeMin & (FragmentSizeMin - 1U)) == 0U);
+static_assert((FragmentSizeMax & (FragmentSizeMax - 1U)) == 0U);
 
 struct Fragment;
 

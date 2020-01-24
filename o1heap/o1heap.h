@@ -52,6 +52,7 @@ typedef void (*O1HeapHook)(void);
 typedef struct
 {
     /// The total amount of memory available for serving the allocation requests.
+    /// The maximum allocation size is (capacity - O1HEAP_ALIGNMENT).
     /// This parameter does not include the overhead used up by @ref O1HeapInstance and arena alignment.
     /// This parameter is constant.
     size_t capacity;
@@ -63,10 +64,10 @@ typedef struct
     /// The maximum value of allocated_bytes seen since initialization. This parameter is never decreased.
     size_t peak_allocated;
 
-    /// The largest fragment size that the allocator has attempted to allocate (perhaps unsuccessfully)
-    /// since initialization, including the rounding and the allocator's own per-fragment overhead.
-    /// This parameter is never decreased. The initial value is zero.
-    size_t peak_total_request_size;
+    /// The largest amount of memory that the allocator has attempted to allocate (perhaps unsuccessfully)
+    /// since initialization (not including the rounding and the allocator's own per-fragment overhead,
+    /// so the total is larger). This parameter is never decreased. The initial value is zero.
+    size_t peak_request_size;
 
     /// The number of times an allocation request could not be completed due to the lack of memory or
     /// excessive fragmentation. OOM stands for "out of memory". This parameter is never decreased.
@@ -75,6 +76,10 @@ typedef struct
 
 /// The arena start pointer and/or its size may be implicitly adjusted to enforce correct alignment.
 /// To avoid this, use a large alignment.
+///
+/// The heap capacity cannot exceed approx. (SIZE_MAX/2); if the arena size allows for a larger heap,
+/// the excess will be silently truncated away. This is not a realistic use case because a typical
+/// application is unlikely to be able to dedicate that much of the address space for the heap.
 ///
 /// The critical section enter/leave callbacks will be invoked when the allocator performs an atomic transaction.
 /// There is exactly one atomic transaction per allocation/deallocation; i.e., each callback is invoked once for
@@ -112,9 +117,8 @@ O1HeapInstance* o1heapInit(void* const      base,
 /// The function is executed in constant time (unless the critical section management hooks are not constant-time).
 /// The allocated memory is NOT zero-filled because zero-filling is a variable-complexity operation.
 ///
-/// The function may invoke critical_section_enter and critical_section_leave at most once.
+/// The function invokes critical_section_enter and critical_section_leave exactly once each.
 /// It is guaranteed that critical_section_enter is invoked before critical_section_leave.
-/// It is guaranteed that critical_section_enter is invoked the same number of times as critical_section_leave.
 void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount);
 
 /// The semantics follows free() with additional guarantees the full list of which is provided below.

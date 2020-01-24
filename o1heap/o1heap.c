@@ -59,16 +59,23 @@
 #    define _static_assert_gl_impl(a, b) a##b  // NOSONAR
 #endif
 
-#define SMALLEST_FRAGMENT_SIZE (O1HEAP_ALIGNMENT * 2U)
+/// The overhead is at most O1HEAP_ALIGNMENT bytes large,
+/// then follows the user data which shall keep the next fragment aligned.
+#define FRAGMENT_SIZE_MIN (O1HEAP_ALIGNMENT * 2U)
 
-/// Normally we should subtract log2(SMALLEST_FRAGMENT_SIZE) but log2 is bulky to compute using the preprocessor only.
+/// This is risky, handle with care: if the allocation amount plus per-fragment overhead exceeds 2**(b-1),
+/// where b is the pointer bit width, then ceil(log2(amount)) yields b; then 2**b causes an integer overflow.
+/// To avoid this, we put a hard limit on fragment size (which is amount + per-fragment overhead): 2**(b-1)
+#define FRAGMENT_SIZE_MAX ((SIZE_MAX >> 1U) + 1U)
+
+/// Normally we should subtract log2(FRAGMENT_SIZE_MIN) but log2 is bulky to compute using the preprocessor only.
 /// We will certainly end up with unused bins this way, but it is cheap to ignore.
 /// Providing fewer bins than may be needed is dangerous because it may lead to runtime out-of-bounds access.
 #define NUM_BINS_MAX (sizeof(size_t) * 8U)
 
-static_assert((O1HEAP_ALIGNMENT & (O1HEAP_ALIGNMENT - 1U)) == 0U, "The alignment shall be an integer power of 2");
-static_assert((SMALLEST_FRAGMENT_SIZE & (SMALLEST_FRAGMENT_SIZE - 1U)) == 0U,
-              "The smallest fragment size shall be an integer power of 2");
+static_assert((O1HEAP_ALIGNMENT & (O1HEAP_ALIGNMENT - 1U)) == 0U, "Not a power of 2");
+static_assert((FRAGMENT_SIZE_MIN & (FRAGMENT_SIZE_MIN - 1U)) == 0U, "Not a power of 2");
+static_assert((FRAGMENT_SIZE_MAX & (FRAGMENT_SIZE_MAX - 1U)) == 0U, "Not a power of 2");
 
 typedef struct Fragment Fragment;
 
@@ -87,7 +94,7 @@ struct Fragment
     // Everything past the header may spill over into the allocatable space. The header survives across alloc/free.
     struct Fragment* next_free;
 };
-static_assert(sizeof(Fragment) <= SMALLEST_FRAGMENT_SIZE, "Memory layout error");
+static_assert(sizeof(Fragment) <= FRAGMENT_SIZE_MIN, "Memory layout error");
 
 struct O1HeapInstance
 {
@@ -129,6 +136,8 @@ O1HEAP_PRIVATE uint8_t log2Ceil(const size_t x)
 }
 
 /// Raise 2 into the specified power.
+/// You might be tempted to do something like (1U << power). WRONG! We humans are prone to forgetting things.
+/// If you forget to cast your 1U to size_t or ULL, you WILL end up with UNDEFINED BEHAVIOR on 64-bit platforms.
 O1HEAP_PRIVATE size_t pow2(const uint8_t power);
 O1HEAP_PRIVATE size_t pow2(const uint8_t power)
 {
@@ -162,8 +171,7 @@ O1HeapInstance* o1heapInit(void* const      base,
     }
 
     O1HeapInstance* out = NULL;
-    if ((adjusted_base != NULL) &&
-        (adjusted_size >= (sizeof(O1HeapInstance) + SMALLEST_FRAGMENT_SIZE + (O1HEAP_ALIGNMENT * 2U))))
+    if ((adjusted_base != NULL) && (adjusted_size >= (sizeof(O1HeapInstance) + (FRAGMENT_SIZE_MIN * 2U))))
     {
         // Allocate the heap metadata structure in the beginning of the arena.
         O1HEAP_ASSERT(((size_t) adjusted_base) % sizeof(O1HeapInstance*) == 0U);
@@ -182,14 +190,19 @@ O1HeapInstance* o1heapInit(void* const      base,
         }
 
         // Align the size; i.e., truncate the end.
-        while ((adjusted_size % SMALLEST_FRAGMENT_SIZE) != 0)
+        if (adjusted_size > FRAGMENT_SIZE_MAX)
+        {
+            adjusted_size = FRAGMENT_SIZE_MAX;
+        }
+        while ((adjusted_size % FRAGMENT_SIZE_MIN) != 0)
         {
             O1HEAP_ASSERT(adjusted_size > 0U);
             adjusted_size--;
         }
 
-        O1HEAP_ASSERT((adjusted_size % SMALLEST_FRAGMENT_SIZE) == 0);
-        O1HEAP_ASSERT(adjusted_size >= SMALLEST_FRAGMENT_SIZE);
+        O1HEAP_ASSERT((adjusted_size % FRAGMENT_SIZE_MIN) == 0);
+        O1HEAP_ASSERT(adjusted_size >= FRAGMENT_SIZE_MIN);
+        O1HEAP_ASSERT(adjusted_size <= FRAGMENT_SIZE_MAX);
         for (size_t i = 0; i < NUM_BINS_MAX; i++)
         {
             out->bins[i] = NULL;
@@ -205,10 +218,10 @@ O1HeapInstance* o1heapInit(void* const      base,
         root_bin->next_free      = NULL;
 
         // Round the fragment size DOWN when searching for a bin for it.
-        const uint8_t bin_index = log2Floor(adjusted_size / SMALLEST_FRAGMENT_SIZE);
+        const uint8_t bin_index = log2Floor(adjusted_size / FRAGMENT_SIZE_MIN);
         O1HEAP_ASSERT(bin_index < NUM_BINS_MAX);
         out->bins[bin_index]   = root_bin;
-        out->nonempty_bin_mask = 1U << bin_index;
+        out->nonempty_bin_mask = pow2(bin_index);
 
         O1HEAP_ASSERT(out->nonempty_bin_mask != 0U);
 
@@ -216,7 +229,7 @@ O1HeapInstance* o1heapInit(void* const      base,
         out->diagnostics.capacity          = adjusted_size;
         out->diagnostics.allocated         = 0U;
         out->diagnostics.peak_allocated    = 0U;
-        out->diagnostics.peak_total_request_size = 0U;
+        out->diagnostics.peak_request_size = 0U;
         out->diagnostics.oom_count         = 0U;
     }
 
@@ -225,19 +238,26 @@ O1HeapInstance* o1heapInit(void* const      base,
 
 void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
 {
+    O1HEAP_ASSERT(handle != NULL);
     void* out = NULL;
-    if (O1HEAP_LIKELY((handle != NULL) && (amount > 0U)))
+
+    // If the amount approaches approx. SIZE_MAX/2, an undetected integer overflow may occur.
+    // To avoid that, we do not attempt allocation if the amount exceeds the hard limit.
+    // We perform multiple redundant checks to account for a possible unaccounted overflow.
+    if (O1HEAP_LIKELY((amount > 0U) && (amount <= (handle->diagnostics.capacity - O1HEAP_ALIGNMENT) &&
+                                        (amount <= (FRAGMENT_SIZE_MAX - O1HEAP_ALIGNMENT)))))
     {
         // Add the header size and align the allocation size to the power of 2.
         // See "Timing-Predictable Memory Allocation In Hard Real-Time Systems", Joerg Herter, page 27:
         // alignment to the power of 2 guarantees that the worst case external fragmentation is bounded.
         // This comes at the expense of higher memory utilization but it is acceptable.
         const size_t fragment_size = pow2(log2Ceil(amount + O1HEAP_ALIGNMENT));
-        O1HEAP_ASSERT(fragment_size >= SMALLEST_FRAGMENT_SIZE);
+        O1HEAP_ASSERT(fragment_size <= FRAGMENT_SIZE_MAX);
+        O1HEAP_ASSERT(fragment_size >= FRAGMENT_SIZE_MIN);
         O1HEAP_ASSERT(fragment_size >= amount + O1HEAP_ALIGNMENT);
         O1HEAP_ASSERT(isPowerOf2(fragment_size));
 
-        const uint8_t optimal_bin_index = log2Ceil(fragment_size / SMALLEST_FRAGMENT_SIZE);
+        const uint8_t optimal_bin_index = log2Ceil(fragment_size / FRAGMENT_SIZE_MIN);  // Use CEIL when fetching.
         O1HEAP_ASSERT(optimal_bin_index < NUM_BINS_MAX);
         const size_t candidate_bin_mask = ~(pow2(optimal_bin_index) - 1U);
 
@@ -257,16 +277,17 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
             Fragment* const frag = handle->bins[bin_index];
             O1HEAP_ASSERT(frag != NULL);
             O1HEAP_ASSERT(frag->header.size >= fragment_size);
-            O1HEAP_ASSERT((frag->header.size % SMALLEST_FRAGMENT_SIZE) == 0U);
+            O1HEAP_ASSERT((frag->header.size % FRAGMENT_SIZE_MIN) == 0U);
 
             // Unlink the fragment we found from the bin because we're going to be using it.
             handle->bins[bin_index] = frag->next_free;
 
             // Split the fragment if it is too large.
             const size_t leftover = frag->header.size - fragment_size;
+            frag->header.size     = fragment_size;
             O1HEAP_ASSERT(leftover < handle->diagnostics.capacity);  // Overflow check.
-            O1HEAP_ASSERT(leftover % SMALLEST_FRAGMENT_SIZE == 0U);  // Alignment check.
-            if (O1HEAP_LIKELY(leftover >= SMALLEST_FRAGMENT_SIZE))
+            O1HEAP_ASSERT(leftover % FRAGMENT_SIZE_MIN == 0U);       // Alignment check.
+            if (O1HEAP_LIKELY(leftover >= FRAGMENT_SIZE_MIN))
             {
                 Fragment* const new_frag = (Fragment*) (void*) (((uint8_t*) frag) + leftover);
                 O1HEAP_ASSERT(((size_t) new_frag) % O1HEAP_ALIGNMENT == 0U);
@@ -282,7 +303,7 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
                     new_frag->header.next->header.prev = new_frag;
                 }
                 // Insert the new split-off fragment into the bin of the appropriate size.
-                const uint8_t new_bin_index = log2Ceil(leftover / SMALLEST_FRAGMENT_SIZE);
+                const uint8_t new_bin_index = log2Floor(leftover / FRAGMENT_SIZE_MIN);  // Use FLOOR when inserting.
                 O1HEAP_ASSERT(new_bin_index < NUM_BINS_MAX);
                 new_frag->next_free         = handle->bins[new_bin_index];
                 handle->bins[new_bin_index] = new_frag;
@@ -296,7 +317,7 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
             }
 
             // Update the diagnostics.
-            O1HEAP_ASSERT((handle->diagnostics.allocated % SMALLEST_FRAGMENT_SIZE) == 0U);
+            O1HEAP_ASSERT((handle->diagnostics.allocated % FRAGMENT_SIZE_MIN) == 0U);
             handle->diagnostics.allocated += fragment_size;
             if (handle->diagnostics.peak_allocated < handle->diagnostics.allocated)
             {
@@ -307,49 +328,48 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
             O1HEAP_ASSERT(frag->header.size >= amount + O1HEAP_ALIGNMENT);
             frag->header.used = true;
             frag->next_free   = NULL;  // This is not necessary but it works as a canary to detect memory corruption.
-            out               = ((uint8_t*) frag) + O1HEAP_ALIGNMENT;
-        }
-        else  // Unsuccessful allocation -- out of memory.
-        {
-            handle->diagnostics.oom_count++;
-        }
 
-        // Update the diagnostics. The peak fragment size shall be updated even if we were unable to allocate.
-        if (handle->diagnostics.peak_total_request_size < fragment_size)
-        {
-            handle->diagnostics.peak_total_request_size = fragment_size;
+            out = ((uint8_t*) frag) + O1HEAP_ALIGNMENT;
         }
-
-        invokeHook(handle->critical_section_leave);
     }
     else
     {
-        O1HEAP_ASSERT(handle != NULL);
+        invokeHook(handle->critical_section_enter);
     }
+
+    // Update the diagnostics.
+    if (handle->diagnostics.peak_request_size < amount)
+    {
+        handle->diagnostics.peak_request_size = amount;
+    }
+    if ((out == NULL) && (amount > 0U))
+    {
+        handle->diagnostics.oom_count++;
+    }
+
+    invokeHook(handle->critical_section_leave);
     return out;
 }
 
 void o1heapFree(O1HeapInstance* const handle, void* const pointer)
 {
-    if (O1HEAP_LIKELY((handle != NULL) && (pointer != NULL) && (((size_t) pointer) % O1HEAP_ALIGNMENT == 0U)))
+    O1HEAP_ASSERT(handle != NULL);
+    O1HEAP_ASSERT(((size_t) pointer) % O1HEAP_ALIGNMENT == 0U);
+    if (O1HEAP_LIKELY((pointer != NULL) && (((size_t) pointer) % O1HEAP_ALIGNMENT == 0U)))
     {
         Fragment* const frag = (Fragment*) (void*) (((uint8_t*) pointer) - O1HEAP_ALIGNMENT);
         O1HEAP_ASSERT(((size_t) frag) % sizeof(Fragment*) == 0U);
 
         // Check the validity of the fragment and try detecting heap corruption.
         O1HEAP_ASSERT(frag->header.used);
-        O1HEAP_ASSERT(frag->header.size >= SMALLEST_FRAGMENT_SIZE);
-        O1HEAP_ASSERT((frag->header.size % SMALLEST_FRAGMENT_SIZE) == 0U);
+        O1HEAP_ASSERT(frag->header.size <= handle->diagnostics.capacity);
+        O1HEAP_ASSERT(frag->header.size >= FRAGMENT_SIZE_MIN);
+        O1HEAP_ASSERT((frag->header.size % FRAGMENT_SIZE_MIN) == 0U);
         O1HEAP_ASSERT(frag->next_free == NULL);  // This one is reset to zero upon allocation as a canary.
 
         invokeHook(handle->critical_section_enter);
 
         invokeHook(handle->critical_section_leave);
-    }
-    else
-    {
-        O1HEAP_ASSERT(handle != NULL);
-        O1HEAP_ASSERT(((size_t) pointer) % O1HEAP_ALIGNMENT == 0U);
     }
 }
 

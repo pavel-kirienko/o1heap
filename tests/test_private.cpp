@@ -17,7 +17,7 @@
 #include "internal.hpp"
 #include <catch.hpp>
 
-TEST_CASE("Private, isPowerOf2")
+TEST_CASE("Private: isPowerOf2")
 {
     using internal::isPowerOf2;
     REQUIRE(isPowerOf2(0));  // Special case.
@@ -32,7 +32,7 @@ TEST_CASE("Private, isPowerOf2")
     REQUIRE(!isPowerOf2(9));
 }
 
-TEST_CASE("Private, log2")
+TEST_CASE("Private: log2")
 {
     using internal::log2Floor;
     using internal::log2Ceil;
@@ -55,7 +55,7 @@ TEST_CASE("Private, log2")
     REQUIRE(log2Ceil(64) == 6);
 }
 
-TEST_CASE("Private, pow2")
+TEST_CASE("Private: pow2")
 {
     using internal::pow2;
     REQUIRE(pow2(0) == 1);
@@ -81,7 +81,7 @@ extern "C" void hook()
 
 }  // namespace
 
-TEST_CASE("Private, invokeHook")
+TEST_CASE("Private: invokeHook")
 {
     using internal::invokeHook;
     REQUIRE(g_hook_invocation_count == 0);
