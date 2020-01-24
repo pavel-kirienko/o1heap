@@ -34,10 +34,11 @@ matrix:
             - linux-libc-dev:i386
             - libc6-dev-i386
       script:
+        - sudo rm -rf /usr/local/clang*
         - wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sudo ./llvm.sh 9
         - clang++-9 -E -x c++ - -v < /dev/null    # Print the Clang configuration for troubleshooting purposes
         - cmake -DCMAKE_C_COMPILER=clang-9 -DCMAKE_CXX_COMPILER=clang++-9 tests
-        - make
+        - make VERBOSE=1
         - sh run_all_tests.sh
 
     # -------------------- Static analysis --------------------
