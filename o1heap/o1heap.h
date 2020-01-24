@@ -59,12 +59,6 @@ typedef struct
     /// For example, if the application requested a fragment of size 1 byte, the value reported here may be 64 bytes.
     size_t allocated_bytes;
 
-    /// The number of allocated fragments currently in use (not yet freed).
-    size_t allocated_fragments;
-
-    /// The number of non-contiguous fragments that the free memory is currently split into.
-    size_t free_fragments;
-
     /// The number of times an allocation request could not be completed due to the lack of memory or
     /// excessive fragmentation. OOM stands for "out of memory". This parameter is never decreased.
     uint64_t oom_count;
@@ -95,7 +89,7 @@ typedef struct
 /// Either or both of the callbacks may be NULL if such functionality is not needed.
 ///
 /// The function initializes a new heap instance allocated in the provided arena, taking some of its space for its
-/// own needs (normally up to 32..512 bytes depending on the architecture, but this parameter is not characterized).
+/// own needs (normally about 32..512 bytes depending on the architecture, but this parameter is not characterized).
 /// A pointer to the newly initialized instance is returned.
 ///
 /// If the provided space is insufficient, or became insufficient after the pointer and size have been aligned,

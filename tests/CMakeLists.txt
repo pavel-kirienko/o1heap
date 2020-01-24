@@ -38,11 +38,12 @@ set(common_sources catch/main.cpp ../o1heap/o1heap.c)
 
 function(add_test name files compile_definitions compile_features flags)
     add_executable(${name} ${common_sources} ${files})
-    target_compile_definitions(${name} PUBLIC ${preprocessor_definitions})
+    target_compile_definitions(${name} PUBLIC ${compile_definitions})
     target_compile_features(${name} PUBLIC ${compile_features})
     set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${flags}" LINK_FLAGS "${flags}")
 endfunction()
 
+# Run all executables like this (bash): for i in ./test_*_c*_x*; do echo $i; ./$i || exit 1; done;
 function(add_test_matrix name files compile_definitions)
     add_test("${name}_c11_x64" "${files}" "${compile_definitions}" c_std_11 "-m64")
     add_test("${name}_c11_x32" "${files}" "${compile_definitions}" c_std_11 "-m32")

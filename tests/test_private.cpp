@@ -14,21 +14,12 @@
 // Copyright (c) 2020 UAVCAN Development Team
 // Authors: Pavel Kirienko <pavel.kirienko@zubax.com>
 
-#include <o1heap.h>
+#include "internal.hpp"
 #include <catch.hpp>
-
-extern "C"
-{
-bool isPowerOf2(const std::size_t x);
-std::uint8_t log2Floor(const std::size_t x);
-std::uint8_t log2Ceil(const std::size_t x);
-std::uint8_t computeBinIndex(const std::size_t block_size);
-std::size_t pow2(const std::uint8_t power);
-void invokeHook(const O1HeapHook hook);
-}
 
 TEST_CASE("Private, isPowerOf2")
 {
+    using internal::isPowerOf2;
     REQUIRE(isPowerOf2(0));     // Special case.
     REQUIRE(isPowerOf2(1));     // 2**0
     REQUIRE(isPowerOf2(2));     // 2**1
@@ -43,6 +34,8 @@ TEST_CASE("Private, isPowerOf2")
 
 TEST_CASE("Private, log2")
 {
+    using internal::log2Floor;
+    using internal::log2Ceil;
     REQUIRE(log2Floor(0) == 0);
     REQUIRE(log2Floor(1) == 0);
     REQUIRE(log2Floor(2) == 1);
@@ -64,6 +57,7 @@ TEST_CASE("Private, log2")
 
 TEST_CASE("Private, pow2")
 {
+    using internal::pow2;
     REQUIRE(pow2(0) == 1);
     REQUIRE(pow2(1) == 2);
     REQUIRE(pow2(2) == 4);
@@ -78,7 +72,8 @@ TEST_CASE("Private, pow2")
 
 TEST_CASE("Private, computeBinIndex")
 {
-    constexpr auto SmallestBlockSize = O1HEAP_ALIGNMENT * 2U;
+    using internal::computeBinIndex;
+    using internal::SmallestBlockSize;
 
     REQUIRE(computeBinIndex(SmallestBlockSize * 1U) == 0);
     REQUIRE(computeBinIndex(SmallestBlockSize * 2U) == 1);
@@ -105,6 +100,7 @@ extern "C" void hook()
 
 TEST_CASE("Private, invokeHook")
 {
+    using internal::invokeHook;
     REQUIRE(g_hook_invocation_count == 0);
     invokeHook(hook);
     REQUIRE(g_hook_invocation_count == 1);

@@ -72,8 +72,8 @@ typedef struct FragmentHeader
 {
     struct Fragment* next;
     struct Fragment* prev;
-    size_t        size;
-    bool          used;
+    size_t           size;
+    bool             used;
 } FragmentHeader;
 static_assert(sizeof(FragmentHeader) <= O1HEAP_ALIGNMENT, "Memory layout error");
 
@@ -221,8 +221,6 @@ O1HeapInstance* o1heapInit(void* const base,
         // Initialize the diagnostics.
         out->diagnostics.capacity_bytes              = adjusted_size;
         out->diagnostics.allocated_bytes             = 0U;
-        out->diagnostics.allocated_fragments         = 0U;
-        out->diagnostics.free_fragments              = 0U;
         out->diagnostics.oom_count                   = 0U;
         out->diagnostics.largest_seen_fragment_bytes = 0U;
         out->diagnostics.integrity_error             = false;
