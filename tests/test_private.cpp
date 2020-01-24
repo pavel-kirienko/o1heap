@@ -70,22 +70,6 @@ TEST_CASE("Private, pow2")
     REQUIRE(pow2(9) == 512);
 }
 
-TEST_CASE("Private, computeBinIndex")
-{
-    using internal::computeBinIndex;
-    using internal::SmallestBlockSize;
-
-    REQUIRE(computeBinIndex(SmallestBlockSize * 1U) == 0);
-    REQUIRE(computeBinIndex(SmallestBlockSize * 2U) == 1);
-    REQUIRE(computeBinIndex(SmallestBlockSize * 3U) == 2);
-    REQUIRE(computeBinIndex(SmallestBlockSize * 4U) == 2);
-    REQUIRE(computeBinIndex(SmallestBlockSize * 5U) == 3);
-    REQUIRE(computeBinIndex(SmallestBlockSize * 6U) == 3);
-    REQUIRE(computeBinIndex(SmallestBlockSize * 7U) == 3);
-    REQUIRE(computeBinIndex(SmallestBlockSize * 8U) == 3);
-    REQUIRE(computeBinIndex(SmallestBlockSize * 9U) == 4);
-}
-
 namespace
 {
 std::uint64_t g_hook_invocation_count = 0;

@@ -64,8 +64,9 @@ typedef struct
     size_t peak_allocated;
 
     /// The largest fragment size that the allocator has attempted to allocate (perhaps unsuccessfully)
-    /// since initialization. This parameter is never decreased. The initial value is zero.
-    size_t peak_request_size;
+    /// since initialization, including the rounding and the allocator's own per-fragment overhead.
+    /// This parameter is never decreased. The initial value is zero.
+    size_t peak_total_request_size;
 
     /// The number of times an allocation request could not be completed due to the lack of memory or
     /// excessive fragmentation. OOM stands for "out of memory". This parameter is never decreased.
@@ -82,7 +83,7 @@ typedef struct
 /// Either or both of the callbacks may be NULL if such functionality is not needed.
 ///
 /// The function initializes a new heap instance allocated in the provided arena, taking some of its space for its
-/// own needs (normally about 32..512 bytes depending on the architecture, but this parameter is not characterized).
+/// own needs (normally about 40..600 bytes depending on the architecture, but this parameter is not characterized).
 /// A pointer to the newly initialized instance is returned.
 ///
 /// If the provided space is insufficient, or became insufficient after the pointer and size have been aligned,

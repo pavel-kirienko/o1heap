@@ -19,19 +19,19 @@
 
 #include <o1heap.h>
 #include <array>
-#include <cstdint>
 #include <cstdarg>
+#include <cstddef>
+#include <cstdint>
+#include <exception>
 
 /// Definitions that are not exposed by the library but that are needed for testing.
 /// Please keep them in sync with the library by manually updating as necessary.
 namespace internal
 {
 extern "C" {
-
 bool         isPowerOf2(const std::size_t x);
 std::uint8_t log2Floor(const std::size_t x);
 std::uint8_t log2Ceil(const std::size_t x);
-std::uint8_t computeBinIndex(const std::size_t block_size);
 std::size_t  pow2(const std::uint8_t power);
 void         invokeHook(const O1HeapHook hook);
 }
@@ -40,7 +40,7 @@ constexpr auto SmallestBlockSize = O1HEAP_ALIGNMENT * 2U;
 
 struct Fragment;
 
-struct FragmentHeader
+struct FragmentHeader final
 {
     Fragment*   next = nullptr;
     Fragment*   prev = nullptr;
@@ -48,15 +48,26 @@ struct FragmentHeader
     bool        used = false;
 };
 
-struct Fragment
+struct Fragment final
 {
     FragmentHeader header;
     Fragment*      next_free = nullptr;
+
+    static const Fragment& constructFromAllocatedMemory(const void* const memory)
+    {
+        if ((memory == nullptr) || (reinterpret_cast<std::size_t>(memory) <= O1HEAP_ALIGNMENT) ||
+            (reinterpret_cast<std::size_t>(memory) % O1HEAP_ALIGNMENT) != 0U)
+        {
+            throw std::invalid_argument("Invalid pointer");
+        }
+        return *reinterpret_cast<const Fragment*>(
+            reinterpret_cast<const void*>(reinterpret_cast<const std::byte*>(memory) - O1HEAP_ALIGNMENT));
+    }
 };
 
-struct O1HeapInstance
+struct O1HeapInstance final
 {
-    std::array<Fragment*, sizeof(size_t) * 8U - sizeof(void*)> bins{};
+    std::array<Fragment*, sizeof(std::size_t) * 8U> bins{};
 
     std::size_t nonempty_bin_mask = 0;
 

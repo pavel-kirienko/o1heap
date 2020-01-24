@@ -61,9 +61,10 @@
 
 #define SMALLEST_FRAGMENT_SIZE (O1HEAP_ALIGNMENT * 2U)
 
-/// Subtraction of the pointer size is a very basic heuristic needed to reduce the number of unnecessary bins.
-/// Normally we should subtract log2(SMALLEST_BIN_CAPACITY) but log2 is bulky to compute using the preprocessor only.
-#define NUM_BINS_MAX (sizeof(size_t) * 8U - sizeof(void*))
+/// Normally we should subtract log2(SMALLEST_FRAGMENT_SIZE) but log2 is bulky to compute using the preprocessor only.
+/// We will certainly end up with unused bins this way, but it is cheap to ignore.
+/// Providing fewer bins than may be needed is dangerous because it may lead to runtime out-of-bounds access.
+#define NUM_BINS_MAX (sizeof(size_t) * 8U)
 
 static_assert((O1HEAP_ALIGNMENT & (O1HEAP_ALIGNMENT - 1U)) == 0U, "The alignment shall be an integer power of 2");
 static_assert((SMALLEST_FRAGMENT_SIZE & (SMALLEST_FRAGMENT_SIZE - 1U)) == 0U,
@@ -91,7 +92,7 @@ static_assert(sizeof(Fragment) <= SMALLEST_FRAGMENT_SIZE, "Memory layout error")
 struct O1HeapInstance
 {
     Fragment* bins[NUM_BINS_MAX];  ///< Smallest fragments are in the bin at index 0.
-    size_t    nonempty_bin_mask;   ///< Bit 1 represents a non-empty bin; bit 0 for smallest bins.
+    size_t    nonempty_bin_mask;   ///< Bit 1 represents a non-empty bin; bin at index 0 is for the smallest fragments.
 
     O1HeapHook critical_section_enter;
     O1HeapHook critical_section_leave;
@@ -125,16 +126,6 @@ O1HEAP_PRIVATE uint8_t log2Ceil(const size_t x);
 O1HEAP_PRIVATE uint8_t log2Ceil(const size_t x)
 {
     return (uint8_t)(log2Floor(x) + (isPowerOf2(x) ? 0U : 1U));
-}
-
-O1HEAP_PRIVATE uint8_t computeBinIndex(const size_t fragment_size);
-O1HEAP_PRIVATE uint8_t computeBinIndex(const size_t fragment_size)
-{
-    O1HEAP_ASSERT(fragment_size >= SMALLEST_FRAGMENT_SIZE);
-    O1HEAP_ASSERT(fragment_size % SMALLEST_FRAGMENT_SIZE == 0U);
-    const uint8_t lg = log2Ceil(fragment_size / SMALLEST_FRAGMENT_SIZE);
-    O1HEAP_ASSERT(lg < NUM_BINS_MAX);
-    return lg;
 }
 
 /// Raise 2 into the specified power.
@@ -213,7 +204,8 @@ O1HeapInstance* o1heapInit(void* const      base,
         root_bin->header.used    = false;
         root_bin->next_free      = NULL;
 
-        const uint8_t bin_index = computeBinIndex(adjusted_size);
+        // Round the fragment size DOWN when searching for a bin for it.
+        const uint8_t bin_index = log2Floor(adjusted_size / SMALLEST_FRAGMENT_SIZE);
         O1HEAP_ASSERT(bin_index < NUM_BINS_MAX);
         out->bins[bin_index]   = root_bin;
         out->nonempty_bin_mask = 1U << bin_index;
@@ -224,7 +216,7 @@ O1HeapInstance* o1heapInit(void* const      base,
         out->diagnostics.capacity          = adjusted_size;
         out->diagnostics.allocated         = 0U;
         out->diagnostics.peak_allocated    = 0U;
-        out->diagnostics.peak_request_size = 0U;
+        out->diagnostics.peak_total_request_size = 0U;
         out->diagnostics.oom_count         = 0U;
     }
 
@@ -245,7 +237,7 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
         O1HEAP_ASSERT(fragment_size >= amount + O1HEAP_ALIGNMENT);
         O1HEAP_ASSERT(isPowerOf2(fragment_size));
 
-        const uint8_t optimal_bin_index = computeBinIndex(fragment_size);
+        const uint8_t optimal_bin_index = log2Ceil(fragment_size / SMALLEST_FRAGMENT_SIZE);
         O1HEAP_ASSERT(optimal_bin_index < NUM_BINS_MAX);
         const size_t candidate_bin_mask = ~(pow2(optimal_bin_index) - 1U);
 
@@ -290,7 +282,8 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
                     new_frag->header.next->header.prev = new_frag;
                 }
                 // Insert the new split-off fragment into the bin of the appropriate size.
-                const uint8_t new_bin_index = computeBinIndex(leftover);
+                const uint8_t new_bin_index = log2Ceil(leftover / SMALLEST_FRAGMENT_SIZE);
+                O1HEAP_ASSERT(new_bin_index < NUM_BINS_MAX);
                 new_frag->next_free         = handle->bins[new_bin_index];
                 handle->bins[new_bin_index] = new_frag;
                 handle->nonempty_bin_mask |= pow2(new_bin_index);
@@ -322,9 +315,9 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
         }
 
         // Update the diagnostics. The peak fragment size shall be updated even if we were unable to allocate.
-        if (handle->diagnostics.peak_request_size < fragment_size)
+        if (handle->diagnostics.peak_total_request_size < fragment_size)
         {
-            handle->diagnostics.peak_request_size = fragment_size;
+            handle->diagnostics.peak_total_request_size = fragment_size;
         }
 
         invokeHook(handle->critical_section_leave);
