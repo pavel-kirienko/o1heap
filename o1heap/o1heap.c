@@ -66,14 +66,6 @@ static_assert((O1HEAP_ALIGNMENT & (O1HEAP_ALIGNMENT - 1U)) == 0U, "The alignment
 static_assert((SMALLEST_BLOCK_SIZE & (SMALLEST_BLOCK_SIZE - 1U)) == 0U,
               "The smallest block size shall be an integer power of 2");
 
-// We must forward-declare the internal functions to facilitate their testing.
-O1HEAP_PRIVATE bool isPowerOf2(const size_t x);
-O1HEAP_PRIVATE uint8_t log2Floor(const size_t x);
-O1HEAP_PRIVATE uint8_t log2Ceil(const size_t x);
-O1HEAP_PRIVATE uint8_t computeBinIndex(const size_t block_size);
-O1HEAP_PRIVATE size_t pow2(const uint8_t power);
-O1HEAP_PRIVATE void invokeHook(const O1HeapHook hook);
-
 typedef struct Block Block;
 
 typedef struct BlockHeader
@@ -104,12 +96,14 @@ struct O1HeapInstance
 };
 
 /// True if the argument is an integer power of two or zero.
+O1HEAP_PRIVATE bool isPowerOf2(const size_t x);
 O1HEAP_PRIVATE bool isPowerOf2(const size_t x)
 {
     return (x & (x - 1U)) == 0U;
 }
 
 /// Special case: if the argument is zero, returns zero.
+O1HEAP_PRIVATE uint8_t log2Floor(const size_t x);
 O1HEAP_PRIVATE uint8_t log2Floor(const size_t x)
 {
     size_t tmp = x;
@@ -123,11 +117,13 @@ O1HEAP_PRIVATE uint8_t log2Floor(const size_t x)
 }
 
 /// Special case: if the argument is zero, returns zero.
+O1HEAP_PRIVATE uint8_t log2Ceil(const size_t x);
 O1HEAP_PRIVATE uint8_t log2Ceil(const size_t x)
 {
     return (uint8_t) (log2Floor(x) + (isPowerOf2(x) ? 0U : 1U));
 }
 
+O1HEAP_PRIVATE uint8_t computeBinIndex(const size_t block_size);
 O1HEAP_PRIVATE uint8_t computeBinIndex(const size_t block_size)
 {
     O1HEAP_ASSERT(block_size >= SMALLEST_BLOCK_SIZE);
@@ -138,11 +134,13 @@ O1HEAP_PRIVATE uint8_t computeBinIndex(const size_t block_size)
 }
 
 /// Raise 2 into the specified power.
+O1HEAP_PRIVATE size_t pow2(const uint8_t power);
 O1HEAP_PRIVATE size_t pow2(const uint8_t power)
 {
     return ((size_t) 1U) << power;
 }
 
+O1HEAP_PRIVATE void invokeHook(const O1HeapHook hook);
 O1HEAP_PRIVATE void invokeHook(const O1HeapHook hook)
 {
     if (O1HEAP_LIKELY(hook != NULL))
@@ -161,8 +159,7 @@ O1HeapInstance* o1heapInit(void* const base,
     // Align the arena pointer.
     uint8_t* adjusted_base = (uint8_t*) base;
     size_t adjusted_size = size;
-    while ((((size_t) adjusted_base) % sizeof(O1HeapInstance*) != 0U) && (adjusted_size > 0U) &&
-           (adjusted_base != NULL))
+    while ((((size_t) adjusted_base) % O1HEAP_ALIGNMENT != 0U) && (adjusted_size > 0U) && (adjusted_base != NULL))
     {
         adjusted_base++;
         O1HEAP_ASSERT(adjusted_size > 0U);
@@ -255,7 +252,7 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
             O1HEAP_ASSERT(bin_index >= optimal_bin_index);
             O1HEAP_ASSERT(bin_index < NUM_BINS_MAX);
 
-            // The bin we found shall not be empty, otherwise it's a state divergence (memory corruption?)
+            // The bin we found shall not be empty, otherwise it's a state divergence (memory corruption?).
             Block* const blk = handle->bins[bin_index];
             O1HEAP_ASSERT(blk != NULL);
             O1HEAP_ASSERT(blk->header.size >= block_size);
@@ -303,6 +300,10 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
             blk->header.used = true;
             blk->next_free = NULL;  // This is not necessary but it works as a canary to detect memory corruption.
             out = ((uint8_t*) blk) + O1HEAP_ALIGNMENT;
+        }
+        else
+        {
+            // TODO: count failures.
         }
 
         invokeHook(handle->critical_section_leave);

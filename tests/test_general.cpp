@@ -13,3 +13,62 @@
 //
 // Copyright (c) 2020 UAVCAN Development Team
 // Authors: Pavel Kirienko <pavel.kirienko@zubax.com>
+
+#include <o1heap.h>
+#include <catch.hpp>
+#include <array>
+
+namespace cs
+{
+namespace
+{
+
+volatile std::uint64_t g_cnt_enter = 0;
+volatile std::uint64_t g_cnt_leave = 0;
+
+void ensureNotInside()
+{
+    REQUIRE(g_cnt_enter == g_cnt_leave);
+}
+
+void enter()
+{
+    ensureNotInside();
+    g_cnt_enter++;
+}
+
+void leave()
+{
+    g_cnt_leave++;
+    ensureNotInside();
+}
+
+}
+}
+
+TEST_CASE("General, init")
+{
+    alignas(128) std::array<std::uint8_t, 1024U> arena{};
+
+    REQUIRE(nullptr == o1heapInit(nullptr, 0U, nullptr, nullptr));
+    REQUIRE(nullptr == o1heapInit(nullptr, 0U, &cs::enter, &cs::leave));
+    REQUIRE(nullptr == o1heapInit(arena.data(), 0U, nullptr, nullptr));
+    REQUIRE(nullptr == o1heapInit(arena.data(), 0U, &cs::enter, &cs::leave));
+    REQUIRE(nullptr == o1heapInit(arena.data(), 99U, nullptr, nullptr));        // Too small.
+    REQUIRE(nullptr == o1heapInit(arena.data(), 99U, &cs::enter, &cs::leave));
+
+    auto heap = o1heapInit(arena.data() + 1U, 1000U, nullptr, &cs::leave);
+    REQUIRE(reinterpret_cast<std::size_t>(heap) > reinterpret_cast<std::size_t>(arena.data() + 1U));
+    REQUIRE(reinterpret_cast<std::size_t>(heap) % O1HEAP_ALIGNMENT == 0U);
+
+    heap = o1heapInit(arena.data() + 1U, 1000U, &cs::enter, nullptr);
+    REQUIRE(reinterpret_cast<std::size_t>(heap) > reinterpret_cast<std::size_t>(arena.data() + 1U));
+    REQUIRE(reinterpret_cast<std::size_t>(heap) % O1HEAP_ALIGNMENT == 0U);
+
+    heap = o1heapInit(arena.data() + 1U, 1000U, &cs::enter, &cs::leave);
+    REQUIRE(reinterpret_cast<std::size_t>(heap) > reinterpret_cast<std::size_t>(arena.data() + 1U));
+    REQUIRE(reinterpret_cast<std::size_t>(heap) % O1HEAP_ALIGNMENT == 0U);
+
+    REQUIRE(cs::g_cnt_enter == 0);
+    REQUIRE(cs::g_cnt_leave == 0);
+}

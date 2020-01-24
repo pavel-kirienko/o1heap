@@ -36,7 +36,20 @@ include_directories(catch ../o1heap)
 
 set(common_sources catch/main.cpp ../o1heap/o1heap.c)
 
-# Private function test (not available via the public API).
-add_executable(test_private ${common_sources} test_private.cpp)
-target_compile_definitions(test_private PUBLIC O1HEAP_EXPOSE_INTERNALS=1)
-target_compile_features(test_private PRIVATE c_std_99)
+function(add_test name files compile_definitions compile_features flags)
+    add_executable(${name} ${common_sources} ${files})
+    target_compile_definitions(${name} PUBLIC ${preprocessor_definitions})
+    target_compile_features(${name} PUBLIC ${compile_features})
+    set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${flags}" LINK_FLAGS "${flags}")
+endfunction()
+
+function(add_test_matrix name files compile_definitions)
+    add_test("${name}_c11_x64" "${files}" "${compile_definitions}" c_std_11 "-m64")
+    add_test("${name}_c11_x32" "${files}" "${compile_definitions}" c_std_11 "-m32")
+    add_test("${name}_c99_x64" "${files}" "${compile_definitions}" c_std_99 "-m64")
+    add_test("${name}_c99_x32" "${files}" "${compile_definitions}" c_std_99 "-m32")
+endfunction()
+
+add_test_matrix(test_private test_private.cpp O1HEAP_EXPOSE_INTERNALS=1)
+
+add_test_matrix(test_general test_general.cpp "")
