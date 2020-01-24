@@ -221,12 +221,11 @@ O1HeapInstance* o1heapInit(void* const      base,
         O1HEAP_ASSERT(out->nonempty_bin_mask != 0U);
 
         // Initialize the diagnostics.
-        out->diagnostics.capacity_bytes              = adjusted_size;
-        out->diagnostics.allocated_bytes             = 0U;
-        out->diagnostics.oom_count                   = 0U;
-        out->diagnostics.largest_seen_fragment_bytes = 0U;
-        out->diagnostics.integrity_error             = false;
-        out->diagnostics.fragmentation_warning       = false;
+        out->diagnostics.capacity          = adjusted_size;
+        out->diagnostics.allocated         = 0U;
+        out->diagnostics.peak_allocated    = 0U;
+        out->diagnostics.peak_request_size = 0U;
+        out->diagnostics.oom_count         = 0U;
     }
 
     return out;
@@ -273,8 +272,8 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
 
             // Split the fragment if it is too large.
             const size_t leftover = frag->header.size - fragment_size;
-            O1HEAP_ASSERT(leftover < handle->diagnostics.capacity_bytes);  // Overflow check.
-            O1HEAP_ASSERT(leftover % SMALLEST_FRAGMENT_SIZE == 0U);        // Alignment check.
+            O1HEAP_ASSERT(leftover < handle->diagnostics.capacity);  // Overflow check.
+            O1HEAP_ASSERT(leftover % SMALLEST_FRAGMENT_SIZE == 0U);  // Alignment check.
             if (O1HEAP_LIKELY(leftover >= SMALLEST_FRAGMENT_SIZE))
             {
                 Fragment* const new_frag = (Fragment*) (void*) (((uint8_t*) frag) + leftover);
@@ -303,7 +302,13 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
                 handle->nonempty_bin_mask &= ~pow2(bin_index);
             }
 
-            // TODO: update the diagnostic info.
+            // Update the diagnostics.
+            O1HEAP_ASSERT((handle->diagnostics.allocated % SMALLEST_FRAGMENT_SIZE) == 0U);
+            handle->diagnostics.allocated += fragment_size;
+            if (handle->diagnostics.peak_allocated < handle->diagnostics.allocated)
+            {
+                handle->diagnostics.peak_allocated = handle->diagnostics.allocated;
+            }
 
             // Finalize the fragment we just allocated.
             O1HEAP_ASSERT(frag->header.size >= amount + O1HEAP_ALIGNMENT);
@@ -311,9 +316,15 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
             frag->next_free   = NULL;  // This is not necessary but it works as a canary to detect memory corruption.
             out               = ((uint8_t*) frag) + O1HEAP_ALIGNMENT;
         }
-        else
+        else  // Unsuccessful allocation -- out of memory.
         {
             handle->diagnostics.oom_count++;
+        }
+
+        // Update the diagnostics. The peak fragment size shall be updated even if we were unable to allocate.
+        if (handle->diagnostics.peak_request_size < fragment_size)
+        {
+            handle->diagnostics.peak_request_size = fragment_size;
         }
 
         invokeHook(handle->critical_section_leave);

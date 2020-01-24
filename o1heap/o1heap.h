@@ -48,35 +48,28 @@ typedef void (*O1HeapHook)(void);
 /// as required by certain safety-critical development guidelines.
 /// If assertion checks are not disabled, the library will perform automatic runtime self-diagnostics that trigger
 /// an assertion failure if a heap corruption is detected.
+/// TODO: INVARIANT CHECKER!
 typedef struct
 {
     /// The total amount of memory available for serving the allocation requests.
     /// This parameter does not include the overhead used up by @ref O1HeapInstance and arena alignment.
     /// This parameter is constant.
-    size_t capacity_bytes;
+    size_t capacity;
 
     /// The amount of memory that is currently allocated, including the per-fragment overhead and size alignment.
     /// For example, if the application requested a fragment of size 1 byte, the value reported here may be 64 bytes.
-    size_t allocated_bytes;
+    size_t allocated;
+
+    /// The maximum value of allocated_bytes seen since initialization. This parameter is never decreased.
+    size_t peak_allocated;
+
+    /// The largest fragment size that the allocator has attempted to allocate (perhaps unsuccessfully)
+    /// since initialization. This parameter is never decreased. The initial value is zero.
+    size_t peak_request_size;
 
     /// The number of times an allocation request could not be completed due to the lack of memory or
     /// excessive fragmentation. OOM stands for "out of memory". This parameter is never decreased.
     uint64_t oom_count;
-
-    /// The largest fragment size that the allocator has attempted to allocate (perhaps unsuccessfully)
-    /// since initialization. This parameter is never decreased. The initial value is zero.
-    size_t largest_seen_fragment_bytes;
-
-    /// This error flag is set if the self-diagnostic routines have detected a heap corruption.
-    /// Some of the above parameters may be inconsistent.
-    /// Once set, this flag is never cleared.
-    bool integrity_error;
-
-    /// This warning flag is set if the heap utilization exceeds the threshold where no request can be rejected due to
-    /// the memory fragmentation.
-    /// Once set, this flag is never cleared.
-    /// TODO: 2 * capacity_bytes * (1 + ceil(log2(largest_seen_fragment_bytes)))
-    bool fragmentation_warning;
 } O1HeapDiagnostics;
 
 /// The arena start pointer and/or its size may be implicitly adjusted to enforce correct alignment.
