@@ -22,37 +22,37 @@
 /// The assertion macro defaults to the standard assert().
 /// It can be overridden to manually suppress assertion checks or use a different error handling policy.
 #ifndef O1HEAP_ASSERT
-#   define O1HEAP_ASSERT(x) assert(x)
+#    define O1HEAP_ASSERT(x) assert(x)
 #endif
 
 /// Branch probability annotations are used to improve the worst case execution time (WCET). They are entirely optional.
 /// A stock implementation is provided for GCC/Clang; for other compilers it defaults to nothing.
 /// If you are using a different compiler, consider overriding this value.
 #ifndef O1HEAP_LIKELY
-#   if defined(__GNUC__) || defined(__clang__)
-#       define O1HEAP_LIKELY(x) __builtin_expect((x), 1)
-#   else
-#       define O1HEAP_LIKELY(x) x
-#   endif
+#    if defined(__GNUC__) || defined(__clang__)
+#        define O1HEAP_LIKELY(x) __builtin_expect((x), 1)
+#    else
+#        define O1HEAP_LIKELY(x) x
+#    endif
 #endif
 
 /// This option is used for testing only. Do not use in production.
 #if defined(O1HEAP_EXPOSE_INTERNALS) && O1HEAP_EXPOSE_INTERNALS
-#   define O1HEAP_PRIVATE
+#    define O1HEAP_PRIVATE
 #else
-#   define O1HEAP_PRIVATE static inline
+#    define O1HEAP_PRIVATE static inline
 #endif
 
 // ---------------------------------------- INTERNAL DEFINITIONS ----------------------------------------
 
 #if !defined(__STDC_VERSION__) || (__STDC_VERSION__ < 199901L)
-#   error "Unsupported language: ISO C99 or a newer version is required."
+#    error "Unsupported language: ISO C99 or a newer version is required."
 #endif
 
 #if __STDC_VERSION__ < 201112L
-#   define static_assert(x, ...) typedef char _static_assert_glue(_static_assertion_, __LINE__)[(x) ? 1 : -1]
-#   define _static_assert_glue(a, b) _static_assert_glue_impl(a, b)
-#   define _static_assert_glue_impl(a, b) a##b
+#    define static_assert(x, ...) typedef char _static_assert_glue(_static_assertion_, __LINE__)[(x) ? 1 : -1]
+#    define _static_assert_glue(a, b) _static_assert_glue_impl(a, b)
+#    define _static_assert_glue_impl(a, b) a##b
 #endif
 
 #define SMALLEST_FRAGMENT_SIZE (O1HEAP_ALIGNMENT * 2U)
@@ -86,8 +86,8 @@ static_assert(sizeof(Fragment) <= SMALLEST_FRAGMENT_SIZE, "Memory layout error")
 
 struct O1HeapInstance
 {
-    Fragment* bins[NUM_BINS_MAX];   ///< Smallest fragments are in the bin at index 0.
-    size_t nonempty_bin_mask;    ///< Bit 1 represents a non-empty bin; bit 0 for smallest bins.
+    Fragment* bins[NUM_BINS_MAX];  ///< Smallest fragments are in the bin at index 0.
+    size_t    nonempty_bin_mask;   ///< Bit 1 represents a non-empty bin; bit 0 for smallest bins.
 
     O1HeapHook critical_section_enter;
     O1HeapHook critical_section_leave;
@@ -106,8 +106,8 @@ O1HEAP_PRIVATE bool isPowerOf2(const size_t x)
 O1HEAP_PRIVATE uint8_t log2Floor(const size_t x);
 O1HEAP_PRIVATE uint8_t log2Floor(const size_t x)
 {
-    size_t tmp = x;
-    uint8_t y = 0;
+    size_t  tmp = x;
+    uint8_t y   = 0;
     while (tmp > 1U)
     {
         tmp >>= 1U;
@@ -120,7 +120,7 @@ O1HEAP_PRIVATE uint8_t log2Floor(const size_t x)
 O1HEAP_PRIVATE uint8_t log2Ceil(const size_t x);
 O1HEAP_PRIVATE uint8_t log2Ceil(const size_t x)
 {
-    return (uint8_t) (log2Floor(x) + (isPowerOf2(x) ? 0U : 1U));
+    return (uint8_t)(log2Floor(x) + (isPowerOf2(x) ? 0U : 1U));
 }
 
 O1HEAP_PRIVATE uint8_t computeBinIndex(const size_t fragment_size);
@@ -151,14 +151,14 @@ O1HEAP_PRIVATE void invokeHook(const O1HeapHook hook)
 
 // ---------------------------------------- PUBLIC API IMPLEMENTATION ----------------------------------------
 
-O1HeapInstance* o1heapInit(void* const base,
-                           const size_t size,
+O1HeapInstance* o1heapInit(void* const      base,
+                           const size_t     size,
                            const O1HeapHook critical_section_enter,
                            const O1HeapHook critical_section_leave)
 {
     // Align the arena pointer.
     uint8_t* adjusted_base = (uint8_t*) base;
-    size_t adjusted_size = size;
+    size_t   adjusted_size = size;
     while ((((size_t) adjusted_base) % O1HEAP_ALIGNMENT != 0U) && (adjusted_size > 0U) && (adjusted_base != NULL))
     {
         adjusted_base++;
@@ -203,15 +203,15 @@ O1HeapInstance* o1heapInit(void* const base,
         O1HEAP_ASSERT(((size_t) adjusted_base) % O1HEAP_ALIGNMENT == 0U);
         O1HEAP_ASSERT(((size_t) adjusted_base) % sizeof(Fragment*) == 0U);
         Fragment* const root_bin = (Fragment*) (void*) adjusted_base;
-        root_bin->header.next = NULL;
-        root_bin->header.prev = NULL;
-        root_bin->header.size = adjusted_size;
-        root_bin->header.used = false;
-        root_bin->next_free = NULL;
+        root_bin->header.next    = NULL;
+        root_bin->header.prev    = NULL;
+        root_bin->header.size    = adjusted_size;
+        root_bin->header.used    = false;
+        root_bin->next_free      = NULL;
 
         const uint8_t bin_index = computeBinIndex(adjusted_size);
         O1HEAP_ASSERT(bin_index < NUM_BINS_MAX);
-        out->bins[bin_index] = root_bin;
+        out->bins[bin_index]   = root_bin;
         out->nonempty_bin_mask = 1U << bin_index;
 
         O1HEAP_ASSERT(out->nonempty_bin_mask != 0U);
@@ -249,7 +249,7 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
         invokeHook(handle->critical_section_enter);
 
         // Find the smallest non-empty bin we can use.
-        const size_t suitable_bins = handle->nonempty_bin_mask & candidate_bin_mask;
+        const size_t suitable_bins     = handle->nonempty_bin_mask & candidate_bin_mask;
         const size_t smallest_bin_mask = suitable_bins & ~(suitable_bins - 1U);  // Clear all bits but the lowest.
         if (O1HEAP_LIKELY(smallest_bin_mask != 0))
         {
@@ -270,7 +270,7 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
             // Split the fragment if it is too large.
             const size_t leftover = frag->header.size - fragment_size;
             O1HEAP_ASSERT(leftover < handle->diagnostics.capacity_bytes);  // Overflow check.
-            O1HEAP_ASSERT(leftover % SMALLEST_FRAGMENT_SIZE == 0U);           // Alignment check.
+            O1HEAP_ASSERT(leftover % SMALLEST_FRAGMENT_SIZE == 0U);        // Alignment check.
             if (O1HEAP_LIKELY(leftover >= SMALLEST_FRAGMENT_SIZE))
             {
                 Fragment* const new_frag = (Fragment*) (void*) (((uint8_t*) frag) + leftover);
@@ -280,7 +280,7 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
                 // Insert the new split-off fragment into the doubly-linked list of fragments. Needed for merging later.
                 new_frag->header.prev = frag;
                 new_frag->header.next = frag->header.next;
-                frag->header.next = new_frag;
+                frag->header.next     = new_frag;
                 if (O1HEAP_LIKELY(new_frag->header.next != NULL))
                 {
                     O1HEAP_ASSERT(new_frag->header.next->header.prev == frag);
@@ -288,7 +288,7 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
                 }
                 // Insert the new split-off fragment into the bin of the appropriate size.
                 const uint8_t new_bin_index = computeBinIndex(leftover);
-                new_frag->next_free = handle->bins[new_bin_index];
+                new_frag->next_free         = handle->bins[new_bin_index];
                 handle->bins[new_bin_index] = new_frag;
                 handle->nonempty_bin_mask |= pow2(new_bin_index);
             }
@@ -304,8 +304,8 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
             // Finalize the fragment we just allocated.
             O1HEAP_ASSERT(frag->header.size >= amount + O1HEAP_ALIGNMENT);
             frag->header.used = true;
-            frag->next_free = NULL;  // This is not necessary but it works as a canary to detect memory corruption.
-            out = ((uint8_t*) frag) + O1HEAP_ALIGNMENT;
+            frag->next_free   = NULL;  // This is not necessary but it works as a canary to detect memory corruption.
+            out               = ((uint8_t*) frag) + O1HEAP_ALIGNMENT;
         }
         else
         {

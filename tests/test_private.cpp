@@ -20,9 +20,9 @@
 TEST_CASE("Private, isPowerOf2")
 {
     using internal::isPowerOf2;
-    REQUIRE(isPowerOf2(0));     // Special case.
-    REQUIRE(isPowerOf2(1));     // 2**0
-    REQUIRE(isPowerOf2(2));     // 2**1
+    REQUIRE(isPowerOf2(0));  // Special case.
+    REQUIRE(isPowerOf2(1));  // 2**0
+    REQUIRE(isPowerOf2(2));  // 2**1
     REQUIRE(!isPowerOf2(3));
     REQUIRE(isPowerOf2(4));
     REQUIRE(!isPowerOf2(5));
@@ -88,7 +88,6 @@ TEST_CASE("Private, computeBinIndex")
 
 namespace
 {
-
 std::uint64_t g_hook_invocation_count = 0;
 
 extern "C" void hook()
@@ -96,7 +95,7 @@ extern "C" void hook()
     g_hook_invocation_count++;
 }
 
-}
+}  // namespace
 
 TEST_CASE("Private, invokeHook")
 {

@@ -22,7 +22,6 @@ namespace cs
 {
 namespace
 {
-
 volatile std::uint64_t g_cnt_enter = 0;
 volatile std::uint64_t g_cnt_leave = 0;
 
@@ -43,8 +42,8 @@ void leave()
     ensureNotInside();
 }
 
-}
-}
+}  // namespace
+}  // namespace cs
 
 TEST_CASE("General, init")
 {
@@ -54,7 +53,7 @@ TEST_CASE("General, init")
     REQUIRE(nullptr == o1heapInit(nullptr, 0U, &cs::enter, &cs::leave));
     REQUIRE(nullptr == o1heapInit(arena.data(), 0U, nullptr, nullptr));
     REQUIRE(nullptr == o1heapInit(arena.data(), 0U, &cs::enter, &cs::leave));
-    REQUIRE(nullptr == o1heapInit(arena.data(), 99U, nullptr, nullptr));        // Too small.
+    REQUIRE(nullptr == o1heapInit(arena.data(), 99U, nullptr, nullptr));  // Too small.
     REQUIRE(nullptr == o1heapInit(arena.data(), 99U, &cs::enter, &cs::leave));
 
     auto heap = o1heapInit(arena.data() + 1U, 1000U, nullptr, &cs::leave);

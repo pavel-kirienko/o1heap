@@ -154,4 +154,4 @@ O1HeapDiagnostics o1heapGetDiagnostics(const O1HeapInstance* const handle);
 #ifdef __cplusplus
 }
 #endif
-#endif //O1HEAP_H_INCLUDED
+#endif  // O1HEAP_H_INCLUDED
