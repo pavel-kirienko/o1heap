@@ -343,6 +343,12 @@ void o1heapFree(O1HeapInstance* const handle, void* const pointer)
         Fragment* const frag = (Fragment*) (void*) (((uint8_t*) pointer) - O1HEAP_ALIGNMENT);
         O1HEAP_ASSERT(((size_t) frag) % sizeof(Fragment*) == 0U);
 
+        // Check the validity of the fragment and try detecting heap corruption.
+        O1HEAP_ASSERT(frag->header.used);
+        O1HEAP_ASSERT(frag->header.size >= SMALLEST_FRAGMENT_SIZE);
+        O1HEAP_ASSERT((frag->header.size % SMALLEST_FRAGMENT_SIZE) == 0U);
+        O1HEAP_ASSERT(frag->next_free == NULL);  // This one is reset to zero upon allocation as a canary.
+
         invokeHook(handle->critical_section_enter);
 
         invokeHook(handle->critical_section_leave);
