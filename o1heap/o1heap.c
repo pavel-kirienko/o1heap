@@ -22,7 +22,8 @@
 /// The assertion macro defaults to the standard assert().
 /// It can be overridden to manually suppress assertion checks or use a different error handling policy.
 #ifndef O1HEAP_ASSERT
-#    define O1HEAP_ASSERT(x) assert(x)
+// Intentional violation of MISRA: the assertion check macro cannot be replaced with a function definition.
+#    define O1HEAP_ASSERT(x) assert(x)  // NOSONAR
 #endif
 
 /// Branch probability annotations are used to improve the worst case execution time (WCET). They are entirely optional.
@@ -30,7 +31,8 @@
 /// If you are using a different compiler, consider overriding this value.
 #ifndef O1HEAP_LIKELY
 #    if defined(__GNUC__) || defined(__clang__)
-#        define O1HEAP_LIKELY(x) __builtin_expect((x), 1)
+// Intentional violation of MISRA: branch hinting macro cannot be replaced with a function definition.
+#        define O1HEAP_LIKELY(x) __builtin_expect((x), 1)  // NOSONAR
 #    else
 #        define O1HEAP_LIKELY(x) x
 #    endif
@@ -50,9 +52,12 @@
 #endif
 
 #if __STDC_VERSION__ < 201112L
-#    define static_assert(x, ...) typedef char _static_assert_glue(_static_assertion_, __LINE__)[(x) ? 1 : -1]
-#    define _static_assert_glue(a, b) _static_assert_glue_impl(a, b)
-#    define _static_assert_glue_impl(a, b) a##b
+// Intentional violation of MISRA: static assertion macro cannot be replaced with a function definition.
+#    define static_assert(x, ...) \
+        typedef char _static_assert_glue(_static_assertion_, __LINE__)[(x) ? 1 : -1]  // NOSONAR
+#    define _static_assert_glue(a, b) _static_assert_glue_impl(a, b)                  // NOSONAR
+// Intentional violation of MISRA: the paste operator ## cannot be avoided in this context.
+#    define _static_assert_glue_impl(a, b) a##b                                       // NOSONAR
 #endif
 
 #define SMALLEST_FRAGMENT_SIZE (O1HEAP_ALIGNMENT * 2U)
@@ -159,7 +164,7 @@ O1HeapInstance* o1heapInit(void* const      base,
     // Align the arena pointer.
     uint8_t* adjusted_base = (uint8_t*) base;
     size_t   adjusted_size = size;
-    while ((((size_t) adjusted_base) % O1HEAP_ALIGNMENT != 0U) && (adjusted_size > 0U) && (adjusted_base != NULL))
+    while (((((size_t) adjusted_base) % O1HEAP_ALIGNMENT) != 0U) && (adjusted_size > 0U) && (adjusted_base != NULL))
     {
         adjusted_base++;
         O1HEAP_ASSERT(adjusted_size > 0U);
@@ -168,7 +173,7 @@ O1HeapInstance* o1heapInit(void* const      base,
 
     O1HeapInstance* out = NULL;
     if ((adjusted_base != NULL) &&
-        (adjusted_size >= (sizeof(O1HeapInstance) + SMALLEST_FRAGMENT_SIZE + O1HEAP_ALIGNMENT * 2U)))
+        (adjusted_size >= (sizeof(O1HeapInstance) + SMALLEST_FRAGMENT_SIZE + (O1HEAP_ALIGNMENT * 2U))))
     {
         // Allocate the heap metadata structure in the beginning of the arena.
         O1HEAP_ASSERT(((size_t) adjusted_base) % sizeof(O1HeapInstance*) == 0U);
@@ -179,7 +184,7 @@ O1HeapInstance* o1heapInit(void* const      base,
         out->critical_section_leave = critical_section_leave;
 
         // Align the start of the storage.
-        while (((size_t) adjusted_base) % O1HEAP_ALIGNMENT != 0U)
+        while ((((size_t) adjusted_base) % O1HEAP_ALIGNMENT) != 0U)
         {
             adjusted_base++;
             O1HEAP_ASSERT(adjusted_size > 0U);
@@ -193,15 +198,15 @@ O1HeapInstance* o1heapInit(void* const      base,
             adjusted_size--;
         }
 
-        O1HEAP_ASSERT(adjusted_size % SMALLEST_FRAGMENT_SIZE == 0);
+        O1HEAP_ASSERT((adjusted_size % SMALLEST_FRAGMENT_SIZE) == 0);
         O1HEAP_ASSERT(adjusted_size >= SMALLEST_FRAGMENT_SIZE);
         for (size_t i = 0; i < NUM_BINS_MAX; i++)
         {
             out->bins[i] = NULL;
         }
 
-        O1HEAP_ASSERT(((size_t) adjusted_base) % O1HEAP_ALIGNMENT == 0U);
-        O1HEAP_ASSERT(((size_t) adjusted_base) % sizeof(Fragment*) == 0U);
+        O1HEAP_ASSERT((((size_t) adjusted_base) % O1HEAP_ALIGNMENT) == 0U);
+        O1HEAP_ASSERT((((size_t) adjusted_base) % sizeof(Fragment*)) == 0U);
         Fragment* const root_bin = (Fragment*) (void*) adjusted_base;
         root_bin->header.next    = NULL;
         root_bin->header.prev    = NULL;
