@@ -26,16 +26,14 @@
 /// Please keep them in sync with the library by manually updating as necessary.
 namespace internal
 {
-extern "C"
-{
+extern "C" {
 
-bool isPowerOf2(const std::size_t x);
+bool         isPowerOf2(const std::size_t x);
 std::uint8_t log2Floor(const std::size_t x);
 std::uint8_t log2Ceil(const std::size_t x);
 std::uint8_t computeBinIndex(const std::size_t block_size);
-std::size_t pow2(const std::uint8_t power);
-void invokeHook(const O1HeapHook hook);
-
+std::size_t  pow2(const std::uint8_t power);
+void         invokeHook(const O1HeapHook hook);
 }
 
 constexpr auto SmallestBlockSize = O1HEAP_ALIGNMENT * 2U;
@@ -59,6 +57,7 @@ struct Fragment
 struct O1HeapInstance
 {
     std::array<Fragment*, sizeof(size_t) * 8U - sizeof(void*)> bins{};
+
     std::size_t nonempty_bin_mask = 0;
 
     O1HeapHook critical_section_enter = nullptr;
@@ -67,6 +66,6 @@ struct O1HeapInstance
     O1HeapDiagnostics diagnostics{};
 };
 
-}
+}  // namespace internal
 
-#endif //O1HEAP_TESTS_INTERNAL_HPP_INCLUDED
+#endif  // O1HEAP_TESTS_INTERNAL_HPP_INCLUDED
