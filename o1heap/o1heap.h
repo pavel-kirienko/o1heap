@@ -21,6 +21,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -42,6 +43,47 @@ typedef void (*O1HeapHook)(void);
 ///      64             | 256                           | 32
 ///
 #define O1HEAP_ALIGNMENT (sizeof(void*) * 4U)
+
+/// Runtime diagnostic information. This information can be used to facilitate runtime self-testing,
+/// as required by certain safety-critical development guidelines.
+/// If assertion checks are not disabled, the library will perform automatic runtime self-diagnostics that trigger
+/// an assertion failure if a heap corruption is detected.
+typedef struct
+{
+    /// The total amount of memory available for serving the allocation requests.
+    /// This parameter does not include the overhead used up by @ref O1HeapInstance and arena alignment.
+    /// This parameter is constant.
+    size_t capacity_bytes;
+
+    /// The amount of memory that is currently allocated, including the per-fragment overhead and size alignment.
+    /// For example, if the application requested a fragment of size 1 byte, the value reported here may be 64 bytes.
+    size_t allocated_bytes;
+
+    /// The number of allocated fragments currently in use (not yet freed).
+    size_t allocated_fragments;
+
+    /// The number of non-contiguous fragments that the free memory is currently split into.
+    size_t free_fragments;
+
+    /// The number of times an allocation request could not be completed due to the lack of memory or
+    /// excessive fragmentation. OOM stands for "out of memory". This parameter is never decreased.
+    uint64_t oom_count;
+
+    /// The largest fragment size that the allocator has attempted to allocate (perhaps unsuccessfully)
+    /// since initialization. This parameter is never decreased. The initial value is zero.
+    size_t largest_seen_fragment_bytes;
+
+    /// This error flag is set if the self-diagnostic routines have detected a heap corruption.
+    /// Some of the above parameters may be inconsistent.
+    /// Once set, this flag is never cleared.
+    bool integrity_error;
+
+    /// This warning flag is set if the heap utilization exceeds the threshold where no request can be rejected due to
+    /// the memory fragmentation.
+    /// Once set, this flag is never cleared.
+    /// TODO: 2 * capacity_bytes * (1 + ceil(log2(largest_seen_fragment_bytes)))
+    bool fragmentation_warning;
+} O1HeapDiagnostics;
 
 /// The arena start pointer and/or its size may be implicitly adjusted to enforce correct alignment.
 /// To avoid this, use a large alignment.
@@ -108,6 +150,12 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount);
 /// It is guaranteed that critical_section_enter is invoked before critical_section_leave.
 /// It is guaranteed that critical_section_enter is invoked the same number of times as critical_section_leave.
 void o1heapFree(O1HeapInstance* const handle, void* const pointer);
+
+/// Returns the diagnostic information, see @ref O1HeapDiagnostics.
+/// This function merely copies the structure from an internal storage, so it is fast to return.
+/// It invokes critical_section_enter once (unless NULL) and then critical_section_leave once (unless NULL).
+/// If the handle pointer is NULL, the behavior is undefined.
+O1HeapDiagnostics o1heapGetDiagnostics(const O1HeapInstance* const handle);
 
 #ifdef __cplusplus
 }

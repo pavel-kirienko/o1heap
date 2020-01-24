@@ -16,7 +16,7 @@
 
 #include "o1heap.h"
 #include <assert.h>
-#include <stdbool.h>
+#include <string.h>
 
 // ---------------------------------------- BUILD CONFIGURATION OPTIONS ----------------------------------------
 
@@ -56,43 +56,44 @@
 #   define _static_assert_glue_impl(a, b) a##b
 #endif
 
-#define SMALLEST_BLOCK_SIZE (O1HEAP_ALIGNMENT * 2U)
+#define SMALLEST_FRAGMENT_SIZE (O1HEAP_ALIGNMENT * 2U)
 
 /// Subtraction of the pointer size is a very basic heuristic needed to reduce the number of unnecessary bins.
 /// Normally we should subtract log2(SMALLEST_BIN_CAPACITY) but log2 is bulky to compute using the preprocessor only.
 #define NUM_BINS_MAX (sizeof(size_t) * 8U - sizeof(void*))
 
 static_assert((O1HEAP_ALIGNMENT & (O1HEAP_ALIGNMENT - 1U)) == 0U, "The alignment shall be an integer power of 2");
-static_assert((SMALLEST_BLOCK_SIZE & (SMALLEST_BLOCK_SIZE - 1U)) == 0U,
-              "The smallest block size shall be an integer power of 2");
+static_assert((SMALLEST_FRAGMENT_SIZE & (SMALLEST_FRAGMENT_SIZE - 1U)) == 0U,
+              "The smallest fragment size shall be an integer power of 2");
 
-typedef struct Block Block;
+typedef struct Fragment Fragment;
 
-typedef struct BlockHeader
+typedef struct FragmentHeader
 {
-    struct Block* next;
-    struct Block* prev;
+    struct Fragment* next;
+    struct Fragment* prev;
     size_t        size;
     bool          used;
-} BlockHeader;
-static_assert(sizeof(BlockHeader) <= O1HEAP_ALIGNMENT, "Memory layout error");
+} FragmentHeader;
+static_assert(sizeof(FragmentHeader) <= O1HEAP_ALIGNMENT, "Memory layout error");
 
-struct Block
+struct Fragment
 {
-    BlockHeader header;
+    FragmentHeader header;
     // Everything past the header may spill over into the allocatable space. The header survives across alloc/free.
-    struct Block* next_free;
+    struct Fragment* next_free;
 };
-static_assert(sizeof(Block) <= SMALLEST_BLOCK_SIZE, "Memory layout error");
+static_assert(sizeof(Fragment) <= SMALLEST_FRAGMENT_SIZE, "Memory layout error");
 
 struct O1HeapInstance
 {
-    Block* bins[NUM_BINS_MAX];   ///< Smallest blocks are in the bin at index 0.
+    Fragment* bins[NUM_BINS_MAX];   ///< Smallest fragments are in the bin at index 0.
     size_t nonempty_bin_mask;    ///< Bit 1 represents a non-empty bin; bit 0 for smallest bins.
-    size_t total_heap_size;      ///< The total amount of allocatable memory, including the per-block overhead.
 
     O1HeapHook critical_section_enter;
     O1HeapHook critical_section_leave;
+
+    O1HeapDiagnostics diagnostics;
 };
 
 /// True if the argument is an integer power of two or zero.
@@ -123,12 +124,12 @@ O1HEAP_PRIVATE uint8_t log2Ceil(const size_t x)
     return (uint8_t) (log2Floor(x) + (isPowerOf2(x) ? 0U : 1U));
 }
 
-O1HEAP_PRIVATE uint8_t computeBinIndex(const size_t block_size);
-O1HEAP_PRIVATE uint8_t computeBinIndex(const size_t block_size)
+O1HEAP_PRIVATE uint8_t computeBinIndex(const size_t fragment_size);
+O1HEAP_PRIVATE uint8_t computeBinIndex(const size_t fragment_size)
 {
-    O1HEAP_ASSERT(block_size >= SMALLEST_BLOCK_SIZE);
-    O1HEAP_ASSERT(block_size % SMALLEST_BLOCK_SIZE == 0U);
-    const uint8_t lg = log2Ceil(block_size / SMALLEST_BLOCK_SIZE);
+    O1HEAP_ASSERT(fragment_size >= SMALLEST_FRAGMENT_SIZE);
+    O1HEAP_ASSERT(fragment_size % SMALLEST_FRAGMENT_SIZE == 0U);
+    const uint8_t lg = log2Ceil(fragment_size / SMALLEST_FRAGMENT_SIZE);
     O1HEAP_ASSERT(lg < NUM_BINS_MAX);
     return lg;
 }
@@ -168,13 +169,14 @@ O1HeapInstance* o1heapInit(void* const base,
 
     O1HeapInstance* out = NULL;
     if ((adjusted_base != NULL) &&
-        (adjusted_size >= (sizeof(O1HeapInstance) + SMALLEST_BLOCK_SIZE + O1HEAP_ALIGNMENT * 2U)))
+        (adjusted_size >= (sizeof(O1HeapInstance) + SMALLEST_FRAGMENT_SIZE + O1HEAP_ALIGNMENT * 2U)))
     {
         // Allocate the heap metadata structure in the beginning of the arena.
         O1HEAP_ASSERT(((size_t) adjusted_base) % sizeof(O1HeapInstance*) == 0U);
         out = (O1HeapInstance*) (void*) adjusted_base;
         adjusted_base += sizeof(O1HeapInstance);
         adjusted_size -= sizeof(O1HeapInstance);
+        (void) memset(out, 0, sizeof(O1HeapInstance));
         out->critical_section_enter = critical_section_enter;
         out->critical_section_leave = critical_section_leave;
 
@@ -187,23 +189,22 @@ O1HeapInstance* o1heapInit(void* const base,
         }
 
         // Align the size; i.e., truncate the end.
-        while ((adjusted_size % SMALLEST_BLOCK_SIZE) != 0)
+        while ((adjusted_size % SMALLEST_FRAGMENT_SIZE) != 0)
         {
             O1HEAP_ASSERT(adjusted_size > 0U);
             adjusted_size--;
         }
 
-        O1HEAP_ASSERT(adjusted_size % SMALLEST_BLOCK_SIZE == 0);
-        O1HEAP_ASSERT(adjusted_size >= SMALLEST_BLOCK_SIZE);
-        out->total_heap_size = adjusted_size;
+        O1HEAP_ASSERT(adjusted_size % SMALLEST_FRAGMENT_SIZE == 0);
+        O1HEAP_ASSERT(adjusted_size >= SMALLEST_FRAGMENT_SIZE);
         for (size_t i = 0; i < NUM_BINS_MAX; i++)
         {
             out->bins[i] = NULL;
         }
 
         O1HEAP_ASSERT(((size_t) adjusted_base) % O1HEAP_ALIGNMENT == 0U);
-        O1HEAP_ASSERT(((size_t) adjusted_base) % sizeof(Block*) == 0U);
-        Block* const root_bin = (Block*) (void*) adjusted_base;
+        O1HEAP_ASSERT(((size_t) adjusted_base) % sizeof(Fragment*) == 0U);
+        Fragment* const root_bin = (Fragment*) (void*) adjusted_base;
         root_bin->header.next = NULL;
         root_bin->header.prev = NULL;
         root_bin->header.size = adjusted_size;
@@ -216,7 +217,16 @@ O1HeapInstance* o1heapInit(void* const base,
         out->nonempty_bin_mask = 1U << bin_index;
 
         O1HEAP_ASSERT(out->nonempty_bin_mask != 0U);
-        O1HEAP_ASSERT(out->total_heap_size >= SMALLEST_BLOCK_SIZE);
+
+        // Initialize the diagnostics.
+        out->diagnostics.capacity_bytes              = adjusted_size;
+        out->diagnostics.allocated_bytes             = 0U;
+        out->diagnostics.allocated_fragments         = 0U;
+        out->diagnostics.free_fragments              = 0U;
+        out->diagnostics.oom_count                   = 0U;
+        out->diagnostics.largest_seen_fragment_bytes = 0U;
+        out->diagnostics.integrity_error             = false;
+        out->diagnostics.fragmentation_warning       = false;
     }
 
     return out;
@@ -231,12 +241,12 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
         // See "Timing-Predictable Memory Allocation In Hard Real-Time Systems", Joerg Herter, page 27:
         // alignment to the power of 2 guarantees that the worst case external fragmentation is bounded.
         // This comes at the expense of higher memory utilization but it is acceptable.
-        const size_t block_size = pow2(log2Ceil(amount + O1HEAP_ALIGNMENT));
-        O1HEAP_ASSERT(block_size >= SMALLEST_BLOCK_SIZE);
-        O1HEAP_ASSERT(block_size >= amount + O1HEAP_ALIGNMENT);
-        O1HEAP_ASSERT(isPowerOf2(block_size));
+        const size_t fragment_size = pow2(log2Ceil(amount + O1HEAP_ALIGNMENT));
+        O1HEAP_ASSERT(fragment_size >= SMALLEST_FRAGMENT_SIZE);
+        O1HEAP_ASSERT(fragment_size >= amount + O1HEAP_ALIGNMENT);
+        O1HEAP_ASSERT(isPowerOf2(fragment_size));
 
-        const uint8_t optimal_bin_index = computeBinIndex(block_size);
+        const uint8_t optimal_bin_index = computeBinIndex(fragment_size);
         O1HEAP_ASSERT(optimal_bin_index < NUM_BINS_MAX);
         const size_t candidate_bin_mask = ~(pow2(optimal_bin_index) - 1U);
 
@@ -245,7 +255,7 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
         // Find the smallest non-empty bin we can use.
         const size_t suitable_bins = handle->nonempty_bin_mask & candidate_bin_mask;
         const size_t smallest_bin_mask = suitable_bins & ~(suitable_bins - 1U);  // Clear all bits but the lowest.
-        if (O1HEAP_LIKELY(smallest_bin_mask != 0))  // Otherwise, the allocation request cannot be served -- no memory.
+        if (O1HEAP_LIKELY(smallest_bin_mask != 0))
         {
             O1HEAP_ASSERT(isPowerOf2(smallest_bin_mask));
             const uint8_t bin_index = log2Floor(smallest_bin_mask);
@@ -253,37 +263,37 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
             O1HEAP_ASSERT(bin_index < NUM_BINS_MAX);
 
             // The bin we found shall not be empty, otherwise it's a state divergence (memory corruption?).
-            Block* const blk = handle->bins[bin_index];
-            O1HEAP_ASSERT(blk != NULL);
-            O1HEAP_ASSERT(blk->header.size >= block_size);
-            O1HEAP_ASSERT((blk->header.size % SMALLEST_BLOCK_SIZE) == 0U);
+            Fragment* const frag = handle->bins[bin_index];
+            O1HEAP_ASSERT(frag != NULL);
+            O1HEAP_ASSERT(frag->header.size >= fragment_size);
+            O1HEAP_ASSERT((frag->header.size % SMALLEST_FRAGMENT_SIZE) == 0U);
 
-            // Unlink the block we found from the bin because we're going to be using it.
-            handle->bins[bin_index] = blk->next_free;
+            // Unlink the fragment we found from the bin because we're going to be using it.
+            handle->bins[bin_index] = frag->next_free;
 
-            // Split the block if it is too large.
-            const size_t leftover = blk->header.size - block_size;
-            O1HEAP_ASSERT(leftover < handle->total_heap_size);      // Overflow check.
-            O1HEAP_ASSERT(leftover % SMALLEST_BLOCK_SIZE == 0U);    // Alignment check.
-            if (O1HEAP_LIKELY(leftover >= SMALLEST_BLOCK_SIZE))     // Annotated as likely to optimize the worst case.
+            // Split the fragment if it is too large.
+            const size_t leftover = frag->header.size - fragment_size;
+            O1HEAP_ASSERT(leftover < handle->diagnostics.capacity_bytes);  // Overflow check.
+            O1HEAP_ASSERT(leftover % SMALLEST_FRAGMENT_SIZE == 0U);           // Alignment check.
+            if (O1HEAP_LIKELY(leftover >= SMALLEST_FRAGMENT_SIZE))
             {
-                Block* const new_blk = (Block*) (void*) (((uint8_t*) blk) + leftover);
-                O1HEAP_ASSERT(((size_t) new_blk) % O1HEAP_ALIGNMENT == 0U);
-                new_blk->header.size = leftover;
-                new_blk->header.used = false;
-                // Insert the new split-off block into the doubly-linked list of blocks. Needed for merging later.
-                new_blk->header.prev = blk;
-                new_blk->header.next = blk->header.next;
-                blk->header.next = new_blk;
-                if (O1HEAP_LIKELY(new_blk->header.next != NULL))
+                Fragment* const new_frag = (Fragment*) (void*) (((uint8_t*) frag) + leftover);
+                O1HEAP_ASSERT(((size_t) new_frag) % O1HEAP_ALIGNMENT == 0U);
+                new_frag->header.size = leftover;
+                new_frag->header.used = false;
+                // Insert the new split-off fragment into the doubly-linked list of fragments. Needed for merging later.
+                new_frag->header.prev = frag;
+                new_frag->header.next = frag->header.next;
+                frag->header.next = new_frag;
+                if (O1HEAP_LIKELY(new_frag->header.next != NULL))
                 {
-                    O1HEAP_ASSERT(new_blk->header.next->header.prev == blk);
-                    new_blk->header.next->header.prev = new_blk;
+                    O1HEAP_ASSERT(new_frag->header.next->header.prev == frag);
+                    new_frag->header.next->header.prev = new_frag;
                 }
-                // Insert the new split-off block into the bin of the appropriate size.
+                // Insert the new split-off fragment into the bin of the appropriate size.
                 const uint8_t new_bin_index = computeBinIndex(leftover);
-                new_blk->next_free = handle->bins[new_bin_index];
-                handle->bins[new_bin_index] = new_blk;
+                new_frag->next_free = handle->bins[new_bin_index];
+                handle->bins[new_bin_index] = new_frag;
                 handle->nonempty_bin_mask |= pow2(new_bin_index);
             }
 
@@ -295,15 +305,15 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
 
             // TODO: update the diagnostic info.
 
-            // Finalize the block we just allocated.
-            O1HEAP_ASSERT(blk->header.size >= amount + O1HEAP_ALIGNMENT);
-            blk->header.used = true;
-            blk->next_free = NULL;  // This is not necessary but it works as a canary to detect memory corruption.
-            out = ((uint8_t*) blk) + O1HEAP_ALIGNMENT;
+            // Finalize the fragment we just allocated.
+            O1HEAP_ASSERT(frag->header.size >= amount + O1HEAP_ALIGNMENT);
+            frag->header.used = true;
+            frag->next_free = NULL;  // This is not necessary but it works as a canary to detect memory corruption.
+            out = ((uint8_t*) frag) + O1HEAP_ALIGNMENT;
         }
         else
         {
-            // TODO: count failures.
+            handle->diagnostics.oom_count++;
         }
 
         invokeHook(handle->critical_section_leave);
@@ -319,8 +329,8 @@ void o1heapFree(O1HeapInstance* const handle, void* const pointer)
 {
     if (O1HEAP_LIKELY((handle != NULL) && (pointer != NULL) && (((size_t) pointer) % O1HEAP_ALIGNMENT == 0U)))
     {
-        Block* const blk = (Block*) (void*) (((uint8_t*) pointer) - O1HEAP_ALIGNMENT);
-        O1HEAP_ASSERT(((size_t) blk) % sizeof(Block*) == 0U);
+        Fragment* const frag = (Fragment*) (void*) (((uint8_t*) pointer) - O1HEAP_ALIGNMENT);
+        O1HEAP_ASSERT(((size_t) frag) % sizeof(Fragment*) == 0U);
 
         invokeHook(handle->critical_section_enter);
 
@@ -331,4 +341,13 @@ void o1heapFree(O1HeapInstance* const handle, void* const pointer)
         O1HEAP_ASSERT(handle != NULL);
         O1HEAP_ASSERT(((size_t) pointer) % O1HEAP_ALIGNMENT == 0U);
     }
+}
+
+O1HeapDiagnostics o1heapGetDiagnostics(const O1HeapInstance* const handle)
+{
+    O1HEAP_ASSERT(handle != NULL);
+    invokeHook(handle->critical_section_enter);
+    const O1HeapDiagnostics out = handle->diagnostics;
+    invokeHook(handle->critical_section_leave);
+    return out;
 }
