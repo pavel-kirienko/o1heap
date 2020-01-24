@@ -17,6 +17,7 @@
 #include "internal.hpp"
 #include <catch.hpp>
 #include <iostream>
+#include <limits>
 #include <random>
 #include <array>
 
@@ -49,7 +50,6 @@ void leave()
 
 namespace
 {
-
 template <typename T>
 std::enable_if_t<std::is_integral_v<T>, std::uint8_t> log2Floor(const T& x)
 {
@@ -63,12 +63,12 @@ std::enable_if_t<std::is_integral_v<T>, std::uint8_t> log2Floor(const T& x)
     return y;
 }
 
-std::uint8_t getRandomByte()
+std::byte getRandomByte()
 {
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
+    static std::random_device                           rd;
+    static std::mt19937                                 gen(rd());
     static std::uniform_int_distribution<std::uint16_t> dis(0, 255U);
-    return static_cast<std::uint8_t>(dis(gen));
+    return static_cast<std::byte>(dis(gen));
 }
 
 auto init(void* const       base,
@@ -92,8 +92,8 @@ auto init(void* const       base,
         REQUIRE((heap->nonempty_bin_mask & (heap->nonempty_bin_mask - 1U)) == 0);
         for (auto i = 0U; i < std::size(heap->bins); i++)
         {
-            const std::size_t min = internal::SmallestBlockSize << i;
-            const std::size_t max = (internal::SmallestBlockSize << i) * 2U - 1U;
+            const std::size_t min = internal::SmallestFragmentSize << i;
+            const std::size_t max = (internal::SmallestFragmentSize << i) * 2U - 1U;
             if ((heap->nonempty_bin_mask & (1ULL << i)) == 0U)
             {
                 REQUIRE(heap->bins[i] == nullptr);
@@ -123,6 +123,21 @@ auto init(void* const       base,
     return heap;
 }
 
+void* allocate(internal::O1HeapInstance* const handle, const size_t amount)
+{
+    return o1heapAllocate(reinterpret_cast<O1HeapInstance*>(handle), amount);
+}
+
+void free(internal::O1HeapInstance* const handle, void* const pointer)
+{
+    return o1heapFree(reinterpret_cast<O1HeapInstance*>(handle), pointer);
+}
+
+O1HeapDiagnostics getDiagnostics(const internal::O1HeapInstance* const handle)
+{
+    return o1heapGetDiagnostics(reinterpret_cast<const O1HeapInstance*>(handle));
+}
+
 }  // namespace
 
 TEST_CASE("General, init")
@@ -130,7 +145,7 @@ TEST_CASE("General, init")
     std::cout << "sizeof(void*)=" << sizeof(void*) << "; sizeof(O1HeapInstance)=" << sizeof(internal::O1HeapInstance)
               << std::endl;
 
-    alignas(128) std::array<std::uint8_t, 10'000U> arena{};
+    alignas(128) std::array<std::byte, 10'000U> arena{};
 
     REQUIRE(nullptr == init(nullptr, 0U, nullptr, nullptr));
     REQUIRE(nullptr == init(nullptr, 0U, &cs::enter, &cs::leave));
@@ -152,11 +167,11 @@ TEST_CASE("General, init")
                              (offset % 4U == 0U) ? &cs::leave : nullptr);
             if (heap == nullptr)
             {
-                REQUIRE(size <= sizeof(internal::O1HeapInstance) * 2U + internal::SmallestBlockSize * 2U);
+                REQUIRE(size <= sizeof(internal::O1HeapInstance) * 2U + internal::SmallestFragmentSize * 2U);
             }
             else
             {
-                REQUIRE(size >= sizeof(internal::O1HeapInstance) + internal::SmallestBlockSize);
+                REQUIRE(size >= sizeof(internal::O1HeapInstance) + internal::SmallestFragmentSize);
                 REQUIRE(reinterpret_cast<std::size_t>(heap) >= reinterpret_cast<std::size_t>(arena.data()));
                 REQUIRE(reinterpret_cast<std::size_t>(heap) % O1HEAP_ALIGNMENT == 0U);
             }
@@ -169,5 +184,46 @@ TEST_CASE("General, init")
 
 TEST_CASE("General, allocate")
 {
+    constexpr auto               ArenaSize = 1024ULL * 1024ULL * 300ULL;
+    std::shared_ptr<std::byte[]> arena(new std::byte[ArenaSize]);
+    std::generate_n(arena.get(), std::min(1024ULL, ArenaSize), getRandomByte);
+    auto heap = init(arena.get(), ArenaSize, &cs::enter, &cs::leave);
+    REQUIRE(heap != nullptr);
 
+    REQUIRE(getDiagnostics(heap).oom_count == 0);
+    REQUIRE(nullptr == allocate(heap, ArenaSize));  // Too large
+    REQUIRE(getDiagnostics(heap).oom_count == 1);
+    REQUIRE(nullptr == allocate(heap, ArenaSize * 10U));                                     // Too large
+    REQUIRE(nullptr == allocate(heap, std::numeric_limits<std::size_t>::max()));             // Check for overflow
+    REQUIRE(nullptr == allocate(heap, std::numeric_limits<std::size_t>::max() - 50U));       // Check for overflow
+    REQUIRE(nullptr == allocate(heap, std::numeric_limits<std::size_t>::max() / 2U));        // Check for overflow
+    REQUIRE(nullptr == allocate(heap, std::numeric_limits<std::size_t>::max() / 2U + 1U));   // Check for overflow
+    REQUIRE(nullptr == allocate(heap, std::numeric_limits<std::size_t>::max() / 2U - 1U));   // Check for overflow
+    REQUIRE(nullptr == allocate(heap, std::numeric_limits<std::size_t>::max() / 2U - 50U));  // Check for overflow
+    REQUIRE(getDiagnostics(heap).oom_count == 2);
+    REQUIRE(nullptr == allocate(heap, 0));  // Nothing to allocate
+    REQUIRE(getDiagnostics(heap).oom_count == 2);
+    REQUIRE(getDiagnostics(heap).peak_allocated == 0);
+    REQUIRE(getDiagnostics(heap).allocated == 0);
+    REQUIRE(getDiagnostics(heap).peak_total_request_size > ArenaSize);
+
+    heap = init(arena.get(), ArenaSize, &cs::enter, &cs::leave);
+    REQUIRE(heap != nullptr);
+    REQUIRE(getDiagnostics(heap).capacity > ArenaSize - 1024U);
+    REQUIRE(getDiagnostics(heap).capacity < ArenaSize);
+    REQUIRE(getDiagnostics(heap).oom_count == 0);
+    REQUIRE(getDiagnostics(heap).peak_allocated == 0);
+    REQUIRE(getDiagnostics(heap).allocated == 0);
+    REQUIRE(getDiagnostics(heap).peak_total_request_size == 0);
+
+    void* mem = allocate(heap, 1U);
+    REQUIRE(mem != nullptr);
+    REQUIRE(getDiagnostics(heap).oom_count == 0);
+    REQUIRE(getDiagnostics(heap).peak_allocated == internal::SmallestFragmentSize);
+    REQUIRE(getDiagnostics(heap).allocated == internal::SmallestFragmentSize);
+    REQUIRE(getDiagnostics(heap).peak_total_request_size == internal::SmallestFragmentSize);
+
+    free(heap, nullptr);  // No effect
+    free(heap, mem);
+    free(heap, nullptr);  // No effect
 }

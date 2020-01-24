@@ -36,7 +36,7 @@ std::size_t  pow2(const std::uint8_t power);
 void         invokeHook(const O1HeapHook hook);
 }
 
-constexpr auto SmallestBlockSize = O1HEAP_ALIGNMENT * 2U;
+constexpr auto SmallestFragmentSize = O1HEAP_ALIGNMENT * 2U;
 
 struct Fragment;
 
