@@ -83,14 +83,14 @@ extern "C" void hook()
 
 TEST_CASE("Private: invokeHook")
 {
-    using internal::invokeHook;
+    using internal::invoke;
     REQUIRE(g_hook_invocation_count == 0);
-    invokeHook(hook);
+    invoke(hook);
     REQUIRE(g_hook_invocation_count == 1);
-    invokeHook(hook);
+    invoke(hook);
     REQUIRE(g_hook_invocation_count == 2);
-    invokeHook(nullptr);
+    invoke(nullptr);
     REQUIRE(g_hook_invocation_count == 2);
-    invokeHook(nullptr);
+    invoke(nullptr);
     REQUIRE(g_hook_invocation_count == 2);
 }

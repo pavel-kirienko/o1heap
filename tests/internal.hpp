@@ -34,7 +34,7 @@ bool         isPowerOf2(const std::size_t x);
 std::uint8_t log2Floor(const std::size_t x);
 std::uint8_t log2Ceil(const std::size_t x);
 std::size_t  pow2(const std::uint8_t power);
-void         invokeHook(const O1HeapHook hook);
+void         invoke(const O1HeapHook hook);
 }
 
 constexpr auto FragmentSizeMin = O1HEAP_ALIGNMENT * 2U;
