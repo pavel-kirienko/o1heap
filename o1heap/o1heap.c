@@ -181,9 +181,13 @@ O1HEAP_PRIVATE bool audit(const O1HeapInstance* const handle, void* const pointe
                 // The linked list pointers are aligned correctly.
                 (((size_t) frag->header.next) % sizeof(Fragment*) == 0U) &&
                 (((size_t) frag->header.prev) % sizeof(Fragment*) == 0U) &&
+                (((size_t) frag->next_free) % sizeof(Fragment*) == 0U) &&
+                (((size_t) frag->prev_free) % sizeof(Fragment*) == 0U) &&
                 // The linked list is internally consistent -- the siblings are interlinked properly.
                 ((frag->header.next == NULL) ? true : (frag->header.next->header.prev == frag)) &&
-                ((frag->header.prev == NULL) ? true : (frag->header.prev == frag));
+                ((frag->header.prev == NULL) ? true : (frag->header.prev->header.next == frag)) &&
+                ((frag->next_free == NULL) ? true : (frag->next_free->prev_free == frag)) &&
+                ((frag->prev_free == NULL) ? true : (frag->prev_free->next_free == frag));
 
             valid = frag_is_valid;
         }
