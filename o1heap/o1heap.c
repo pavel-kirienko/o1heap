@@ -81,10 +81,10 @@ typedef struct Fragment Fragment;
 
 typedef struct FragmentHeader
 {
-    struct Fragment* next;
-    struct Fragment* prev;
-    size_t           size;
-    bool             used;
+    Fragment* next;
+    Fragment* prev;
+    size_t    size;
+    bool      used;
 } FragmentHeader;
 static_assert(sizeof(FragmentHeader) <= O1HEAP_ALIGNMENT, "Memory layout error");
 
@@ -92,7 +92,7 @@ struct Fragment
 {
     FragmentHeader header;
     // Everything past the header may spill over into the allocatable space. The header survives across alloc/free.
-    struct Fragment* next_free;
+    Fragment* next_free;
 };
 static_assert(sizeof(Fragment) <= FRAGMENT_SIZE_MIN, "Memory layout error");
 
@@ -150,6 +150,61 @@ O1HEAP_PRIVATE void invokeHook(const O1HeapHook hook)
     if (O1HEAP_LIKELY(hook != NULL))
     {
         hook();
+    }
+}
+
+O1HEAP_PRIVATE bool isValidAllocation(const O1HeapInstance* const handle, void* const pointer);
+O1HEAP_PRIVATE bool isValidAllocation(const O1HeapInstance* const handle, void* const pointer)
+{
+    O1HEAP_ASSERT(handle != NULL);
+    O1HEAP_ASSERT(handle->diagnostics.capacity <= FRAGMENT_SIZE_MAX);
+    bool valid = false;
+
+    if (O1HEAP_LIKELY(pointer != NULL))
+    {
+        // The range is NOT precise -- a mere approximation will suffice.
+        const size_t heap_range_bottom = ((size_t) handle) + sizeof(O1HeapInstance);
+        const size_t heap_range_top    = heap_range_bottom + handle->diagnostics.capacity;
+        const size_t fragment_address  = ((size_t) pointer) - O1HEAP_ALIGNMENT;
+
+        const bool pointer_is_valid = (fragment_address % O1HEAP_ALIGNMENT == 0U) &&
+                                      (fragment_address >= heap_range_bottom) && (fragment_address <= heap_range_top);
+        if (O1HEAP_LIKELY(pointer_is_valid))
+        {
+            Fragment* const frag = (Fragment*) (void*) (((uint8_t*) pointer) - O1HEAP_ALIGNMENT);
+            O1HEAP_ASSERT(((size_t) frag) % sizeof(Fragment*) == 0U);  // Alignment is checked above.
+
+            const bool frag_is_valid =
+                frag->header.used && (frag->header.size <= handle->diagnostics.capacity) &&
+                (frag->header.size >= FRAGMENT_SIZE_MIN) && ((frag->header.size % FRAGMENT_SIZE_MIN) == 0U) &&
+                // The linked list pointers are aligned correctly.
+                (((size_t) frag->header.next) % sizeof(Fragment*) == 0U) &&
+                (((size_t) frag->header.prev) % sizeof(Fragment*) == 0U) &&
+                // The linked list is internally consistent -- the siblings are interlinked properly.
+                ((frag->header.next == NULL) ? true : (frag->header.next->header.prev == frag)) &&
+                ((frag->header.prev == NULL) ? true : (frag->header.prev == frag));
+
+            valid = frag_is_valid;
+        }
+    }
+    else  // A NULL pointer is unconditionally valid.
+    {
+        valid = true;
+    }
+    return valid;
+}
+
+/// Links two fragments so that ther next/prev pointers point to each other; left goes before right.
+O1HEAP_PRIVATE void interlink(Fragment* const left, Fragment* const right);
+O1HEAP_PRIVATE void interlink(Fragment* const left, Fragment* const right)
+{
+    if (left != NULL)
+    {
+        left->header.next = right;
+    }
+    if (right != NULL)
+    {
+        right->header.prev = left;
     }
 }
 
@@ -239,13 +294,13 @@ O1HeapInstance* o1heapInit(void* const      base,
 void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
 {
     O1HEAP_ASSERT(handle != NULL);
+    O1HEAP_ASSERT(handle->diagnostics.capacity <= FRAGMENT_SIZE_MAX);
     void* out = NULL;
 
     // If the amount approaches approx. SIZE_MAX/2, an undetected integer overflow may occur.
     // To avoid that, we do not attempt allocation if the amount exceeds the hard limit.
     // We perform multiple redundant checks to account for a possible unaccounted overflow.
-    if (O1HEAP_LIKELY((amount > 0U) && (amount <= (handle->diagnostics.capacity - O1HEAP_ALIGNMENT) &&
-                                        (amount <= (FRAGMENT_SIZE_MAX - O1HEAP_ALIGNMENT)))))
+    if (O1HEAP_LIKELY((amount > 0U) && (amount <= (handle->diagnostics.capacity - O1HEAP_ALIGNMENT))))
     {
         // Add the header size and align the allocation size to the power of 2.
         // See "Timing-Predictable Memory Allocation In Hard Real-Time Systems", Joerg Herter, page 27:
@@ -293,15 +348,8 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
                 O1HEAP_ASSERT(((size_t) new_frag) % O1HEAP_ALIGNMENT == 0U);
                 new_frag->header.size = leftover;
                 new_frag->header.used = false;
-                // Insert the new split-off fragment into the doubly-linked list of fragments. Needed for merging later.
-                new_frag->header.prev = frag;
-                new_frag->header.next = frag->header.next;
-                frag->header.next     = new_frag;
-                if (O1HEAP_LIKELY(new_frag->header.next != NULL))
-                {
-                    O1HEAP_ASSERT(new_frag->header.next->header.prev == frag);
-                    new_frag->header.next->header.prev = new_frag;
-                }
+                interlink(new_frag, frag->header.next);
+                interlink(frag, new_frag);
                 // Insert the new split-off fragment into the bin of the appropriate size.
                 const uint8_t new_bin_index = log2Floor(leftover / FRAGMENT_SIZE_MIN);  // Use FLOOR when inserting.
                 O1HEAP_ASSERT(new_bin_index < NUM_BINS_MAX);
@@ -326,8 +374,7 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
 
             // Finalize the fragment we just allocated.
             O1HEAP_ASSERT(frag->header.size >= amount + O1HEAP_ALIGNMENT);
-            frag->header.used = true;
-            frag->next_free   = NULL;  // This is not necessary but it works as a canary to detect memory corruption.
+            frag->header.used = true;  // We keep the next_free pointer hanging.
 
             out = ((uint8_t*) frag) + O1HEAP_ALIGNMENT;
         }
@@ -354,20 +401,69 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
 void o1heapFree(O1HeapInstance* const handle, void* const pointer)
 {
     O1HEAP_ASSERT(handle != NULL);
-    O1HEAP_ASSERT(((size_t) pointer) % O1HEAP_ALIGNMENT == 0U);
-    if (O1HEAP_LIKELY((pointer != NULL) && (((size_t) pointer) % O1HEAP_ALIGNMENT == 0U)))
+    const bool pointer_is_valid = isValidAllocation(handle, pointer);
+    O1HEAP_ASSERT(pointer_is_valid);
+    if (O1HEAP_LIKELY(pointer_is_valid && (pointer != NULL)))  // NULL pointer is a no-op.
     {
         Fragment* const frag = (Fragment*) (void*) (((uint8_t*) pointer) - O1HEAP_ALIGNMENT);
         O1HEAP_ASSERT(((size_t) frag) % sizeof(Fragment*) == 0U);
 
-        // Check the validity of the fragment and try detecting heap corruption.
-        O1HEAP_ASSERT(frag->header.used);
-        O1HEAP_ASSERT(frag->header.size <= handle->diagnostics.capacity);
-        O1HEAP_ASSERT(frag->header.size >= FRAGMENT_SIZE_MIN);
-        O1HEAP_ASSERT((frag->header.size % FRAGMENT_SIZE_MIN) == 0U);
-        O1HEAP_ASSERT(frag->next_free == NULL);  // This one is reset to zero upon allocation as a canary.
-
         invokeHook(handle->critical_section_enter);
+
+        // Even if we're going to drop the fragment later, mark it free anyway to prevent double-free.
+        frag->header.used = false;
+
+        // Update the diagnostics. It must be done before merging because it invalidates the fragment size information.
+        O1HEAP_ASSERT(handle->diagnostics.allocated >= frag->header.size);  // Heap corruption check.
+        handle->diagnostics.allocated -= frag->header.size;
+
+        //  0. The returned block is surrounded by two free blocks.
+        //     We just merge them into the left one and unlink the other two:
+        //      [ prev ][ this ][ next ]
+        //      [         prev         ]
+        //
+        //  1. The left block is free, the right one is not or is non-existent.
+        //      [ prev ][ this ][ next ]
+        //      [     prev     ][ next ]
+        //
+        //  2. The right block is free, the left one is not or is non-existent.
+        //      [ prev ][ this ][ next ]
+        //      [ prev ][     next     ]
+        //
+        //  3. Left is not free or is non-existent; right is likewise.
+        //      [ prev ][ this ][ next ]
+        //      [ prev ][ this ][ next ]
+        Fragment* const prev       = frag->header.prev;
+        Fragment* const next       = frag->header.next;
+        const bool      join_left  = (prev != NULL) && !prev->header.used;
+        const bool      join_right = (next != NULL) && !next->header.used;
+        // TODO REBINNING REBINNING REBINNING REBINNING REBINNING REBINNING REBINNING REBINNING REBINNING REBINNING
+        if (join_left && join_right)
+        {
+            prev->header.size += frag->header.size + next->header.size;
+            frag->header.size = 0;  // Invalidate the dropped fragment headers to prevent double-free.
+            next->header.size = 0;
+            O1HEAP_ASSERT((prev->header.size % FRAGMENT_SIZE_MIN) == 0U);
+            interlink(prev, next->header.next);
+        }
+        else if (join_left)
+        {
+            prev->header.size += frag->header.size;
+            frag->header.size = 0;
+            O1HEAP_ASSERT((prev->header.size % FRAGMENT_SIZE_MIN) == 0U);
+            interlink(prev, next);
+        }
+        else if (join_right)
+        {
+            frag->header.size += next->header.size;
+            next->header.size = 0;
+            O1HEAP_ASSERT((frag->header.size % FRAGMENT_SIZE_MIN) == 0U);
+            interlink(frag, next->header.next);
+        }
+        else
+        {
+            // TODO REBINNING
+        }
 
         invokeHook(handle->critical_section_leave);
     }

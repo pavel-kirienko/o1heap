@@ -111,9 +111,6 @@ O1HeapInstance* o1heapInit(void* const      base,
 /// If the allocation request cannot be served due to the lack of memory or its excessive fragmentation,
 /// a NULL pointer is returned.
 ///
-/// If the handle is not a valid pointer (NULL), an assertion failure is triggered (unless disabled)
-/// and NULL is returned.
-///
 /// The function is executed in constant time (unless the critical section management hooks are not constant-time).
 /// The allocated memory is NOT zero-filled because zero-filling is a variable-complexity operation.
 ///
@@ -123,22 +120,21 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount);
 
 /// The semantics follows free() with additional guarantees the full list of which is provided below.
 ///
-/// If the handle is not a valid pointer (NULL), an assertion failure is triggered (unless disabled)
-/// and NULL is returned.
-///
 /// If the pointer does not point to a previously allocated block, the behavior is undefined.
-/// The library contains a set of heuristics that are intended to detect whether the supplied pointer is valid.
-/// If the pointer is proven to be invalid, an assertion failure is triggered (unless disabled)
-/// and no further actions are performed (i.e., if assertion checks are disabled, passing an invalid pointer
-/// is likely to result in a silent no-op).
-/// Said invalid pointer detection heuristics are not robust, so a false-negative is possible, in which case
-/// a heap corruption may occur. The heuristics are guaranteed to never yield a false-positive.
+/// The library contains a set of reasonably reliable yet non-intrusive heuristics that are intended to
+/// detect whether the supplied pointer is valid. If the pointer is proven to be invalid,
+/// an assertion failure is triggered (unless disabled) and no further actions are performed
+/// (i.e., if assertion checks are disabled, passing an invalid pointer is likely to result in a silent no-op).
+/// Said invalid pointer detection heuristics are not perfect: a false-negative is possible, in which case
+/// a heap corruption may occur. The heuristics are guaranteed to never yield a false-positive (i.e., a valid
+/// pointer cannot be rejected). It is expected that the heuristics are sufficiently robust to detect a
+/// vast majority of such errors.
 ///
 /// The freed memory will be automatically merged with adjacent free fragments, if any.
 ///
 /// The function is executed in constant time (unless the critical section management hooks are not constant-time).
 ///
-/// The function may invoke critical_section_enter and critical_section_leave at most once.
+/// The function may invoke critical_section_enter and critical_section_leave at most once each.
 /// It is guaranteed that critical_section_enter is invoked before critical_section_leave.
 /// It is guaranteed that critical_section_enter is invoked the same number of times as critical_section_leave.
 void o1heapFree(O1HeapInstance* const handle, void* const pointer);

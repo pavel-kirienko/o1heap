@@ -322,6 +322,4 @@ TEST_CASE("General: allocate: size_t overflow (bloody mess)")
 
     REQUIRE(heap->nonempty_bin_mask == 0);
     REQUIRE(std::all_of(std::begin(heap->bins), std::end(heap->bins), [](auto* p) { return p == nullptr; }));
-
-    free(heap, mem);
 }
