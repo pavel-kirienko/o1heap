@@ -1,15 +1,17 @@
-# o1heap
+# O(1) heap
 
-Add badges.
+[![Build Status](https://travis-ci.org/pavel-kirienko/o1heap.svg?branch=master)](https://travis-ci.org/pavel-kirienko/o1heap)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=pavel-kirienko_o1heap&metric=alert_status)](https://sonarcloud.io/dashboard?id=pavel-kirienko_o1heap)
+[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=pavel-kirienko_o1heap&metric=reliability_rating)](https://sonarcloud.io/dashboard?id=pavel-kirienko_o1heap)
 
 ## Description
 
-This is a highly deterministic constant-complexity memory allocator designed for hard real-time embedded systems.
+O1heap is a highly deterministic constant-complexity memory allocator designed for hard real-time embedded systems.
 The name stands for *O(1) heap*.
 
 The allocator offers
 a constant worst-case execution time (WCET) and
-a bounded worst-case memory fragmentation (consumption) (WCMF).
+a bounded worst-case memory fragmentation (consumption) (WCMC).
 The allocator allows the designer to statically prove its temporal and spatial properties for a given application,
 which makes it suitable for use in safety-critical systems.
 
@@ -37,7 +39,7 @@ the synchronization overhead and reduce contention.
 
 Allocate and deallocate memory using `o1heapAllocate(...)` and `o1heapDeallocate()`.
 Their semantics are compatible with `malloc()` and `free()` plus additional behavioral guarantees
-(constant timing and bounded fragmentation).
+(constant timing, bounded fragmentation, protections against double-free and heap corruption in `free()`).
 
 ## Development
 
