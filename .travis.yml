@@ -59,6 +59,17 @@ matrix:
 
     # -------------------- Static analysis --------------------
     - language: cpp
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:  # Install a newer GCC because https://stackoverflow.com/a/51512150/1007777.
+            - g++-9
+            - g++-9-multilib
+            - gcc-9-multilib
+            - linux-libc-dev:i386
+            - libc6-dev-i386
+            - libstdc++-7-dev:i386
       script:
         - sudo rm -rf /usr/local/clang*
         - wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sudo ./llvm.sh 9

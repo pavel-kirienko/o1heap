@@ -85,6 +85,7 @@ struct Fragment final
     }
 };
 
+/// Please maintain the fields in exact sync with the private definition in o1heap.c!
 struct O1HeapInstance final
 {
     std::array<Fragment*, sizeof(std::size_t) * 8U> bins{};
@@ -94,6 +95,7 @@ struct O1HeapInstance final
     O1HeapHook critical_section_enter = nullptr;
     O1HeapHook critical_section_leave = nullptr;
 
+    /// The same data is available via getDiagnostics(). The duplication is intentional.
     O1HeapDiagnostics diagnostics{};
 
     [[nodiscard]] auto allocate(const size_t amount)
