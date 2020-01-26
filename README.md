@@ -47,7 +47,7 @@ The caching-related issues are considered in the design: the core Half-Fit algor
 minimize the number of random memory accesses; furthermore, the allocation strategy favors least recently used memory
 fragments to minimize cache misses in the application.
 
-Being constant-time, the allocation and deallocation routines contain neither loops nor recursion.
+The allocation and deallocation routines are strictly linear and contain neither loops nor recursive calls.
 In order to further improve the real-time performance, manual branch hinting is used,
 allowing the compiler to generate code that is optimized for the longest path, thus reducing WCET.
 

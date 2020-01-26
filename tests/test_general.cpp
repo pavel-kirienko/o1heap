@@ -15,11 +15,11 @@
 // Authors: Pavel Kirienko <pavel.kirienko@zubax.com>
 
 #include "internal.hpp"
-#include <catch.hpp>
+#include "catch.hpp"
 #include <algorithm>
+#include <array>
 #include <iostream>
 #include <random>
-#include <array>
 
 namespace cs
 {
@@ -61,7 +61,7 @@ constexpr std::size_t KiB = 1024U;
 constexpr std::size_t MiB = KiB * KiB;
 
 template <typename T>
-std::enable_if_t<std::is_integral_v<T>, std::uint8_t> log2Floor(const T& x)
+auto log2Floor(const T& x) -> std::enable_if_t<std::is_integral_v<T>, std::uint8_t>
 {
     std::size_t  tmp = x;
     std::uint8_t y   = 0;
@@ -73,7 +73,7 @@ std::enable_if_t<std::is_integral_v<T>, std::uint8_t> log2Floor(const T& x)
     return y;
 }
 
-std::byte getRandomByte()
+auto getRandomByte()
 {
     static std::random_device                           rd;
     static std::mt19937                                 gen(rd());
@@ -140,17 +140,17 @@ auto init(void* const       base,
     return heap;
 }
 
-void* allocate(internal::O1HeapInstance* const handle, const size_t amount)
+auto allocate(internal::O1HeapInstance* const handle, const size_t amount)
 {
     return o1heapAllocate(reinterpret_cast<O1HeapInstance*>(handle), amount);
 }
 
-void free(internal::O1HeapInstance* const handle, void* const pointer)
+auto deallocate(internal::O1HeapInstance* const handle, void* const pointer)
 {
     return o1heapFree(reinterpret_cast<O1HeapInstance*>(handle), pointer);
 }
 
-O1HeapDiagnostics getDiagnostics(const internal::O1HeapInstance* const handle)
+auto getDiagnostics(const internal::O1HeapInstance* const handle)
 {
     return o1heapGetDiagnostics(reinterpret_cast<const O1HeapInstance*>(handle));
 }
@@ -206,7 +206,7 @@ TEST_CASE("General: allocate: OOM")
 
     constexpr auto               MiB256    = MiB * 256U;
     constexpr auto               ArenaSize = MiB256 + MiB;
-    std::shared_ptr<std::byte[]> arena(new std::byte[ArenaSize]);
+    std::shared_ptr<std::byte[]> arena(new std::byte[ArenaSize]);  // NOLINT avoid-c-arrays
 
     auto heap = init(arena.get(), ArenaSize, &cs::enter, &cs::leave);
     REQUIRE(heap != nullptr);
@@ -249,7 +249,7 @@ TEST_CASE("General: allocate: smallest")
     cs::resetCounters();
 
     constexpr auto               ArenaSize = MiB * 300U;
-    std::shared_ptr<std::byte[]> arena(new std::byte[ArenaSize]);
+    std::shared_ptr<std::byte[]> arena(new std::byte[ArenaSize]);  // NOLINT avoid-c-arrays
 
     auto heap = init(arena.get(), ArenaSize, &cs::enter, &cs::leave);
     REQUIRE(heap != nullptr);
@@ -271,7 +271,7 @@ TEST_CASE("General: allocate: smallest")
     REQUIRE(frag.header.next->header.size == (heap->diagnostics.capacity - frag.header.size));
     REQUIRE(!frag.header.next->header.used);
 
-    free(heap, mem);
+    deallocate(heap, mem);
 }
 
 TEST_CASE("General: allocate: size_t overflow")
@@ -281,7 +281,7 @@ TEST_CASE("General: allocate: size_t overflow")
     cs::resetCounters();
 
     constexpr auto               ArenaSize = MiB * 300U;
-    std::shared_ptr<std::byte[]> arena(new std::byte[ArenaSize]);
+    std::shared_ptr<std::byte[]> arena(new std::byte[ArenaSize]);  // NOLINT avoid-c-arrays
 
     auto heap = init(arena.get(), ArenaSize);
     REQUIRE(heap != nullptr);

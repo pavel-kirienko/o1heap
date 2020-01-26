@@ -17,24 +17,24 @@
 #ifndef O1HEAP_TESTS_INTERNAL_HPP_INCLUDED
 #define O1HEAP_TESTS_INTERNAL_HPP_INCLUDED
 
-#include <o1heap.h>
+#include "o1heap.h"
 #include <array>
-#include <limits>
 #include <cstdarg>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <limits>
 
 /// Definitions that are not exposed by the library but that are needed for testing.
 /// Please keep them in sync with the library by manually updating as necessary.
 namespace internal
 {
 extern "C" {
-bool         isPowerOf2(const std::size_t x);
-std::uint8_t log2Floor(const std::size_t x);
-std::uint8_t log2Ceil(const std::size_t x);
-std::size_t  pow2(const std::uint8_t power);
-void         invoke(const O1HeapHook hook);
+auto isPowerOf2(const std::size_t x) -> bool;
+auto log2Floor(const std::size_t x) -> std::uint8_t;
+auto log2Ceil(const std::size_t x) -> std::uint8_t;
+auto pow2(const std::uint8_t power) -> std::size_t;
+void invoke(const O1HeapHook hook);
 }
 
 constexpr auto FragmentSizeMin = O1HEAP_ALIGNMENT * 2U;
@@ -58,7 +58,7 @@ struct Fragment final
     FragmentHeader header;
     Fragment*      next_free = nullptr;
 
-    static const Fragment& constructFromAllocatedMemory(const void* const memory)
+    [[nodiscard]] static auto constructFromAllocatedMemory(const void* const memory) -> const Fragment&
     {
         if ((memory == nullptr) || (reinterpret_cast<std::size_t>(memory) <= O1HEAP_ALIGNMENT) ||
             (reinterpret_cast<std::size_t>(memory) % O1HEAP_ALIGNMENT) != 0U)
@@ -80,6 +80,16 @@ struct O1HeapInstance final
     O1HeapHook critical_section_leave = nullptr;
 
     O1HeapDiagnostics diagnostics{};
+
+    [[nodiscard]] auto getFirstFragment() const -> const Fragment*
+    {
+        const std::uint8_t* ptr = reinterpret_cast<const std::uint8_t*>(this) + sizeof(*this);
+        while ((reinterpret_cast<std::size_t>(ptr) % O1HEAP_ALIGNMENT) != 0)
+        {
+            ptr++;
+        }
+        return reinterpret_cast<const Fragment*>(reinterpret_cast<const void*>(ptr));
+    }
 
     void validate() const
     {
