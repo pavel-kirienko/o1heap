@@ -247,7 +247,7 @@ TEST_CASE("General: allocate: smallest")
     REQUIRE(heap->getDiagnostics().peak_request_size == 1);
     REQUIRE(((cs::g_cnt_enter == 5) && (cs::g_cnt_leave == 5)));
 
-    auto frag = internal::Fragment::constructFromAllocatedMemory(mem);
+    auto& frag = internal::Fragment::constructFromAllocatedMemory(mem);
     REQUIRE(frag.header.size == (O1HEAP_ALIGNMENT * 2U));
     REQUIRE(frag.header.next != nullptr);
     REQUIRE(frag.header.prev == nullptr);
@@ -295,7 +295,7 @@ TEST_CASE("General: allocate: size_t overflow")
     void* const mem = heap->allocate(internal::FragmentSizeMax - O1HEAP_ALIGNMENT);
     REQUIRE(mem != nullptr);
 
-    auto frag = internal::Fragment::constructFromAllocatedMemory(mem);
+    auto& frag = internal::Fragment::constructFromAllocatedMemory(mem);
     REQUIRE(frag.header.size == internal::FragmentSizeMax);
     REQUIRE(frag.header.next == nullptr);
     REQUIRE(frag.header.prev == nullptr);

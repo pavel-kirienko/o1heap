@@ -29,8 +29,8 @@ This implementation derives or is based on the ideas presented in:
 - "Timing-Predictable Memory Allocation In Hard Real-Time Systems" -- J. Herter, 2014.
 - "An algorithm with constant execution time for dynamic storage allocation" -- T. Ogasawara, 1995.
 
-The allocator implements the Half-Fit algorithm proposed by Ogasawara
-with a crucial modification -- memory is allocated in fragments of size:
+The allocator implements a modified Half-Fit algorithm proposed by Ogasawara
+where memory is allocated in fragments of size:
 
 s(r) = 2<sup>ceil(log<sub>2</sub>(r+h))</sup>-h
 
@@ -39,9 +39,6 @@ for memory management needs.
 The size of the overhead *h* is represented in the codebase as `O1HEAP_ALIGNMENT`,
 because it also dictates the allocated memory pointer alignment.
 The rounding up to the power of 2 is done to ensure that WCMC is bounded [Herter 2014].
-This results in an increased memory consumption in the average case, but this is found to be tolerable because this
-implementation is intended for highly deterministic real-time systems where the average-case performance metrics
-are less relevant than in general-purpose applications.
 
 The caching-related issues are considered in the design: the core Half-Fit algorithm is inherently optimized to
 minimize the number of random memory accesses; furthermore, the allocation strategy favors least recently used memory
@@ -52,6 +49,8 @@ In order to further improve the real-time performance, manual branch hinting is 
 allowing the compiler to generate code that is optimized for the longest path, thus reducing WCET.
 
 TODO: document how to compute the memory requirements.
+
+WCMC(M, m) = 2 M (1 + ceil(log<sub>2</sub> m))
 
 ## Usage
 
