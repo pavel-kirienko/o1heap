@@ -20,7 +20,7 @@ matrix:
       script:
         - CC=gcc-9 && CXX=g++-9 && cmake tests
         - build-wrapper-linux-x86-64 --out-dir sonar-dump make all  # The build wrapper comes from Sonar Cloud.
-        - sh run_all_tests.sh
+        - make test
         - sonar-scanner
 
     # -------------------- Clang 9 --------------------
@@ -41,7 +41,7 @@ matrix:
         - clang++-9 -E -x c++ - -v < /dev/null    # Print the Clang configuration for troubleshooting purposes
         - cmake -DCMAKE_C_COMPILER=clang-9 -DCMAKE_CXX_COMPILER=clang++-9 tests
         - make VERBOSE=1
-        - sh run_all_tests.sh
+        - make test
 
     # -------------------- Static analysis --------------------
     - language: cpp

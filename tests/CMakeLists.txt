@@ -17,6 +17,10 @@
 cmake_minimum_required(VERSION 3.12)
 project(o1heap_tests C CXX)
 
+set(CMAKE_BUILD_TYPE Debug)
+
+enable_testing()
+
 # C options
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Werror -pedantic")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wdouble-promotion -Wswitch-enum -Wfloat-equal -Wundef")
@@ -36,28 +40,23 @@ include_directories(catch ../o1heap)
 
 set(common_sources catch/main.cpp ../o1heap/o1heap.c)
 
-# Upon generation, all tests can be run via run_all_tests.sh.
-set(run_all_tests_script "${CMAKE_BINARY_DIR}/run_all_tests.sh")
-file(REMOVE ${run_all_tests_script})
-
-function(add_test name files compile_definitions compile_features flags)
+function(gen_test name files compile_definitions compile_features compile_flags link_flags)
     add_executable(${name} ${common_sources} ${files})
     target_compile_definitions(${name} PUBLIC ${compile_definitions})
     target_compile_features(${name} PUBLIC ${compile_features})
-    set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${flags}" LINK_FLAGS "${flags}")
+    set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${compile_flags}" LINK_FLAGS "${link_flags}")
 
-    file(APPEND ${run_all_tests_script} "./${name} --rng-seed time || exit 1\n")
+    add_test("run_${name}" "${name}")
 endfunction()
 
-function(add_test_matrix name files compile_definitions)
-    add_test("${name}_c99_x64"      "${files}" "${compile_definitions}"          c_std_99 "-m64")
-    add_test("${name}_c99_x32"      "${files}" "${compile_definitions}"          c_std_99 "-m32")
-    add_test("${name}_c11_x64"      "${files}" "${compile_definitions}"          c_std_11 "-m64")
-    add_test("${name}_c11_x32"      "${files}" "${compile_definitions}"          c_std_11 "-m32")
-    add_test("${name}_c11_x64_fast" "${files}" "${compile_definitions};NDEBUG=1" c_std_11 "-m64 -Ofast")
-    add_test("${name}_c11_x32_fast" "${files}" "${compile_definitions};NDEBUG=1" c_std_11 "-m32 -Ofast")
+function(gen_test_matrix name files compile_definitions)
+    gen_test("${name}_c99_x64"      "${files}" "${compile_definitions}"          c_std_99 "-m64"        "-m64")
+    gen_test("${name}_c99_x32"      "${files}" "${compile_definitions}"          c_std_99 "-m32"        "-m32")
+    gen_test("${name}_c11_x64"      "${files}" "${compile_definitions}"          c_std_11 "-m64"        "-m64")
+    gen_test("${name}_c11_x32"      "${files}" "${compile_definitions}"          c_std_11 "-m32"        "-m32")
+    gen_test("${name}_c11_x64_fast" "${files}" "${compile_definitions};NDEBUG=1" c_std_11 "-m64 -Ofast" "-m64")
+    gen_test("${name}_c11_x32_fast" "${files}" "${compile_definitions};NDEBUG=1" c_std_11 "-m32 -Ofast" "-m32")
 endfunction()
 
-add_test_matrix(test_private test_private.cpp O1HEAP_EXPOSE_INTERNALS=1)
-
-add_test_matrix(test_general test_general.cpp "")
+gen_test_matrix(test_private test_private.cpp O1HEAP_EXPOSE_INTERNALS=1)
+gen_test_matrix(test_general test_general.cpp "")
