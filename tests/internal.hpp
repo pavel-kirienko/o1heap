@@ -153,6 +153,10 @@ struct O1HeapInstance final
     {
         validateInvariants();  // Can't use RAII because it may throw -- can't throw from destructor.
         const auto out = o1heapAllocate(reinterpret_cast<::O1HeapInstance*>(this), amount);
+        if (out != nullptr)
+        {
+            Fragment::constructFromAllocatedMemory(out).validateInvariants();
+        }
         validateInvariants();
         return out;
     }
