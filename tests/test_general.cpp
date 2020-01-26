@@ -274,7 +274,7 @@ TEST_CASE("General: allocate: smallest")
     free(heap, mem);
 }
 
-TEST_CASE("General: allocate: size_t overflow (bloody mess)")
+TEST_CASE("General: allocate: size_t overflow")
 {
     constexpr auto size_max = std::numeric_limits<std::size_t>::max();
 

@@ -51,6 +51,7 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
-# IDE
+# IDE & outputs
 .idea/
 cmake-build-*/
+build/

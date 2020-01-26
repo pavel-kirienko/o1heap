@@ -80,6 +80,11 @@ struct O1HeapInstance final
     O1HeapHook critical_section_leave = nullptr;
 
     O1HeapDiagnostics diagnostics{};
+
+    void validate() const
+    {
+        // TODO
+    }
 };
 
 }  // namespace internal
