@@ -56,6 +56,13 @@ function(gen_test_matrix name files compile_definitions)
     gen_test("${name}_c11_x32"      "${files}" "${compile_definitions}"          c_std_11 "-m32"        "-m32")
     gen_test("${name}_c11_x64_fast" "${files}" "${compile_definitions};NDEBUG=1" c_std_11 "-m64 -Ofast" "-m64")
     gen_test("${name}_c11_x32_fast" "${files}" "${compile_definitions};NDEBUG=1" c_std_11 "-m32 -Ofast" "-m32")
+
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        gen_test("${name}_cov"      "${files}" "${compile_definitions}"          c_std_11
+                 "-g -O0 -fprofile-arcs -ftest-coverage"
+                 "-fprofile-arcs -ftest-coverage")
+        target_link_libraries("${name}_cov" gcov)
+    endif()
 endfunction()
 
 gen_test_matrix(test_private test_private.cpp O1HEAP_EXPOSE_INTERNALS=1)
