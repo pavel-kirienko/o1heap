@@ -29,8 +29,7 @@ matrix:
 
         # ---------- RELEASE ----------
         - CC=gcc-9 && CXX=g++-9 && cmake tests -DCMAKE_BUILD_TYPE=Release
-        - make all
-        - make test
+        - make all && make test
 
         # ---------- ANALYSIS ----------
         - sonar-scanner
@@ -51,9 +50,12 @@ matrix:
       script:
         - wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sudo ./llvm.sh 9
         - clang++-9 -E -x c++ - -v < /dev/null    # Print the Clang configuration for troubleshooting purposes
-        - cmake -DCMAKE_C_COMPILER=clang-9 -DCMAKE_CXX_COMPILER=clang++-9 tests
-        - make VERBOSE=1
-        - make test
+        # DEBUG
+        - cmake -DCMAKE_C_COMPILER=clang-9 -DCMAKE_CXX_COMPILER=clang++-9 tests -DCMAKE_BUILD_TYPE=Debug
+        - make VERBOSE=1 && make test
+        # RELEASE
+        - cmake -DCMAKE_C_COMPILER=clang-9 -DCMAKE_CXX_COMPILER=clang++-9 tests -DCMAKE_BUILD_TYPE=Release
+        - make VERBOSE=1 && make test
 
     # -------------------- Static analysis --------------------
     - language: cpp
