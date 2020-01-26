@@ -30,7 +30,7 @@
 /// A stock implementation is provided for GCC/Clang; for other compilers it defaults to nothing.
 /// If you are using a different compiler, consider overriding this value.
 #ifndef O1HEAP_LIKELY
-#    if defined(__GNUC__) || defined(__clang__)
+#    if defined(__GNUC__) || defined(__clang__) || defined(__CC_ARM)
 // Intentional violation of MISRA: branch hinting macro cannot be replaced with a function definition.
 #        define O1HEAP_LIKELY(x) __builtin_expect((x), 1)  // NOSONAR
 #    else
@@ -121,6 +121,8 @@ O1HEAP_PRIVATE uint8_t log2Floor(const size_t x)
 {
     size_t  tmp = x;
     uint8_t y   = 0;
+    // This is currently the only exception to the statement "routines contain neither loops nor recursion".
+    // It is unclear if there is a better way to compute the binary logarithm than this.
     while (tmp > 1U)
     {
         tmp >>= 1U;
@@ -409,6 +411,7 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
             // Update the diagnostics.
             O1HEAP_ASSERT((handle->diagnostics.allocated % FRAGMENT_SIZE_MIN) == 0U);
             handle->diagnostics.allocated += fragment_size;
+            O1HEAP_ASSERT(handle->diagnostics.allocated <= handle->diagnostics.capacity);
             if (handle->diagnostics.peak_allocated < handle->diagnostics.allocated)
             {
                 handle->diagnostics.peak_allocated = handle->diagnostics.allocated;

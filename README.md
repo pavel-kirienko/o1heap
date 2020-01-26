@@ -22,9 +22,40 @@ The codebase is extremely compact (<500 SLoC) and is therefore trivial to valida
 The allocator is designed to be portable across all conventional architectures, from 8-bit to 64-bit systems.
 Multi-threaded environments are supported with the help of external synchronization hooks provided by the application.
 
+## Design
+
+This implementation derives or is based on the ideas presented in:
+
+- "Timing-Predictable Memory Allocation In Hard Real-Time Systems" -- J. Herter, 2014.
+- "An algorithm with constant execution time for dynamic storage allocation" -- T. Ogasawara, 1995.
+
+The allocator implements the Half-Fit algorithm proposed by Ogasawara
+with a crucial modification -- memory is allocated in fragments of size:
+
+s(r) = 2<sup>ceil(log<sub>2</sub>(r+h))</sup>-h
+
+Where *r* is the requested allocation size and *h* is the fixed per-allocation overhead imposed by the allocator
+for memory management needs.
+The size of the overhead *h* is represented in the codebase as `O1HEAP_ALIGNMENT`,
+because it also dictates the allocated memory pointer alignment.
+The rounding up to the power of 2 is done to ensure that WCMC is bounded [Herter 2014].
+This results in an increased memory consumption in the average case, but this is found to be tolerable because this
+implementation is intended for highly deterministic real-time systems where the average-case performance metrics
+are less relevant than in general-purpose applications.
+
+The caching-related issues are considered in the design: the core Half-Fit algorithm is inherently optimized to
+minimize the number of random memory accesses; furthermore, the allocation strategy favors least recently used memory
+fragments to minimize cache misses in the application.
+
+Being constant-time, the allocation and deallocation routines contain neither loops nor recursion.
+In order to further improve the real-time performance, manual branch hinting is used,
+allowing the compiler to generate code that is optimized for the longest path, thus reducing WCET.
+
 TODO: document how to compute the memory requirements.
 
 ## Usage
+
+### Integration
 
 Copy the files `o1heap.c` and `o1heap.h` (find them under `o1heap/`) into your project tree.
 Either keep them in the same directory, or make sure that the directory that contains the header
@@ -40,6 +71,32 @@ the synchronization overhead and reduce contention.
 Allocate and deallocate memory using `o1heapAllocate(...)` and `o1heapDeallocate()`.
 Their semantics are compatible with `malloc()` and `free()` plus additional behavioral guarantees
 (constant timing, bounded fragmentation, protections against double-free and heap corruption in `free()`).
+
+### Build configuration options
+
+The preprocessor options given below can be overridden (e.g., using the `-D` compiler flag, depending on the compiler)
+to fine-tune the implementation.
+None of them are mandatory to use.
+
+#### O1HEAP_ASSERT(x)
+
+The macro `O1HEAP_ASSERT(x)` can be defined to customize the assertion handling or to disable it.
+To disable assertion checks, the macro should expand into `(void)(x)`.
+
+If not specified, the macro expands into the standard assertion check macro `assert(x)` as defined in `<assert.h>`.
+
+#### O1HEAP_LIKELY(x)
+
+Some of the conditional branching statements are equipped with this annotation to hint the compiler that
+the generated code should be optimized for the case where the corresponding branch is taken.
+The macro should expand into a compiler-specific branch weighting intrinsic,
+or into the original expression `(x)` if no such hinting is desired.
+
+If not specified, the macro expands as follows:
+
+- For some well-known compilers the macro automatically expands into appropriate branch weighting intrinsics.
+For example, for GCC, Clang, and ARM Compiler, it expands into `__builtin_expect((x), 1)`.
+- For other compilers it expands into the original expression with no modifications: `(x)`.
 
 ## Development
 
