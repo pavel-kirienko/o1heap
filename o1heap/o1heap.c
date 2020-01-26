@@ -188,9 +188,7 @@ O1HEAP_PRIVATE bool audit(const O1HeapInstance* const handle, const void* const 
                 ((((size_t) frag->prev_free) % sizeof(Fragment*)) == 0U) &&
                 // The linked list is internally consistent -- the siblings are interlinked properly.
                 ((frag->header.next == NULL) || (frag->header.next->header.prev == frag)) &&
-                ((frag->header.prev == NULL) || (frag->header.prev->header.next == frag)) &&
-                ((frag->next_free == NULL) || (frag->next_free->prev_free == frag)) &&
-                ((frag->prev_free == NULL) || (frag->prev_free->next_free == frag));
+                ((frag->header.prev == NULL) || (frag->header.prev->header.next == frag));
 
             valid = frag_is_valid;
         }
@@ -391,6 +389,7 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
             O1HEAP_ASSERT(frag != NULL);
             O1HEAP_ASSERT(frag->header.size >= fragment_size);
             O1HEAP_ASSERT((frag->header.size % FRAGMENT_SIZE_MIN) == 0U);
+            O1HEAP_ASSERT(!frag->header.used);
             unbin(handle, frag);
 
             // Split the fragment if it is too large.

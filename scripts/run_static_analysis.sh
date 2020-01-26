@@ -21,10 +21,8 @@ set -e
 # We use separate .clang-tidy for the production code and the test suite.
 # The latter is held to less stringent standards and is not an ideomatic C++ because it is designed to test C code.
 
-pushd o1heap
+cd "$ROOT/o1heap"
 clang-tidy ./*.c
-popd
 
-pushd tests
+cd "$ROOT/tests"
 clang-tidy ./*.cpp -- -I"$ROOT/o1heap" -Icatch -std=c++17
-popd

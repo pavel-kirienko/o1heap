@@ -108,6 +108,7 @@ The compliance is enforced with the help of the scripts located under `scripts/`
 ### Testing
 
 Please refer to the continuous integration configuration to see how to invoke the tests.
+Make sure there are at least a few GiB of free physical RAM available when running the tests.
 
 ### Static analysis
 

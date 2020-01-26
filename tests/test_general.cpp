@@ -15,7 +15,6 @@
 // Authors: Pavel Kirienko <pavel.kirienko@zubax.com>
 
 #include "internal.hpp"
-#include "catch.hpp"
 #include <algorithm>
 #include <array>
 #include <iostream>
@@ -99,6 +98,8 @@ auto init(void* const       base,
         REQUIRE(heap->critical_section_enter == critical_section_enter);
         REQUIRE(heap->critical_section_leave == critical_section_leave);
 
+        heap->validateInvariants();
+
         // std::cout << "arena_size=" << size << "; "
         //           << "capacity=" << heap->diagnostics.capacity << "; "
         //           << "nonempty_bin_mask=" << heap->nonempty_bin_mask << std::endl;
@@ -110,14 +111,13 @@ auto init(void* const       base,
             const std::size_t max = (internal::FragmentSizeMin << i) * 2U - 1U;
             if ((heap->nonempty_bin_mask & (1ULL << i)) == 0U)
             {
-                REQUIRE(heap->bins[i] == nullptr);
+                REQUIRE(heap->bins.at(i) == nullptr);
             }
             else
             {
-                REQUIRE(heap->bins[i] != nullptr);
-                REQUIRE(heap->bins[i]->header.size >= min);
-                REQUIRE(heap->bins[i]->header.size <= max);
-                // std::cout << "bin[" << i << "]=" << heap->bins[i] << " (" << min << ".." << max << ")" << std::endl;
+                REQUIRE(heap->bins.at(i) != nullptr);
+                REQUIRE(heap->bins.at(i)->header.size >= min);
+                REQUIRE(heap->bins.at(i)->header.size <= max);
             }
         }
 
@@ -129,30 +129,16 @@ auto init(void* const       base,
         REQUIRE(heap->diagnostics.peak_allocated == 0);
         REQUIRE(heap->diagnostics.peak_request_size == 0);
 
-        const auto root_fragment = heap->bins[log2Floor(heap->nonempty_bin_mask)];
+        const auto root_fragment = heap->bins.at(log2Floor(heap->nonempty_bin_mask));
         REQUIRE(root_fragment != nullptr);
         REQUIRE(root_fragment->next_free == nullptr);
+        REQUIRE(root_fragment->prev_free == nullptr);
         REQUIRE(!root_fragment->header.used);
         REQUIRE(root_fragment->header.size == heap->diagnostics.capacity);
         REQUIRE(root_fragment->header.next == nullptr);
         REQUIRE(root_fragment->header.prev == nullptr);
     }
     return heap;
-}
-
-auto allocate(internal::O1HeapInstance* const handle, const size_t amount)
-{
-    return o1heapAllocate(reinterpret_cast<O1HeapInstance*>(handle), amount);
-}
-
-auto deallocate(internal::O1HeapInstance* const handle, void* const pointer)
-{
-    return o1heapFree(reinterpret_cast<O1HeapInstance*>(handle), pointer);
-}
-
-auto getDiagnostics(const internal::O1HeapInstance* const handle)
-{
-    return o1heapGetDiagnostics(reinterpret_cast<const O1HeapInstance*>(handle));
 }
 
 }  // namespace
@@ -170,8 +156,6 @@ TEST_CASE("General: init")
     REQUIRE(nullptr == init(arena.data(), 0U, &cs::enter, &cs::leave));
     REQUIRE(nullptr == init(arena.data(), 99U, nullptr, nullptr));  // Too small.
     REQUIRE(nullptr == init(arena.data(), 99U, &cs::enter, &cs::leave));
-
-    // TODO: test O1HEAP_CAPACITY_LIMIT
 
     // Check various offsets and sizes to make sure the initialization is done correctly in all cases.
     for (auto offset = 0U; offset < 7U; offset++)
@@ -210,38 +194,38 @@ TEST_CASE("General: allocate: OOM")
 
     auto heap = init(arena.get(), ArenaSize, &cs::enter, &cs::leave);
     REQUIRE(heap != nullptr);
-    REQUIRE(getDiagnostics(heap).capacity > ArenaSize - 1024U);
-    REQUIRE(getDiagnostics(heap).capacity < ArenaSize);
-    REQUIRE(getDiagnostics(heap).oom_count == 0);
+    REQUIRE(heap->getDiagnostics().capacity > ArenaSize - 1024U);
+    REQUIRE(heap->getDiagnostics().capacity < ArenaSize);
+    REQUIRE(heap->getDiagnostics().oom_count == 0);
     REQUIRE(cs::g_cnt_enter == 3);
     REQUIRE(cs::g_cnt_enter == 3);
 
-    REQUIRE(nullptr == allocate(heap, ArenaSize));  // Too large
-    REQUIRE(getDiagnostics(heap).oom_count == 1);
+    REQUIRE(nullptr == heap->allocate(ArenaSize));  // Too large
+    REQUIRE(heap->getDiagnostics().oom_count == 1);
     REQUIRE(cs::g_cnt_enter == 5);
     REQUIRE(cs::g_cnt_enter == 5);
 
-    REQUIRE(nullptr == allocate(heap, ArenaSize - O1HEAP_ALIGNMENT));  // Too large
-    REQUIRE(getDiagnostics(heap).oom_count == 2);
+    REQUIRE(nullptr == heap->allocate(ArenaSize - O1HEAP_ALIGNMENT));  // Too large
+    REQUIRE(heap->getDiagnostics().oom_count == 2);
 
-    REQUIRE(nullptr == allocate(heap, heap->diagnostics.capacity - O1HEAP_ALIGNMENT + 1U));  // Too large
-    REQUIRE(getDiagnostics(heap).oom_count == 3);
+    REQUIRE(nullptr == heap->allocate(heap->diagnostics.capacity - O1HEAP_ALIGNMENT + 1U));  // Too large
+    REQUIRE(heap->getDiagnostics().oom_count == 3);
 
-    REQUIRE(nullptr == allocate(heap, ArenaSize * 10U));  // Too large
-    REQUIRE(getDiagnostics(heap).oom_count == 4);
+    REQUIRE(nullptr == heap->allocate(ArenaSize * 10U));  // Too large
+    REQUIRE(heap->getDiagnostics().oom_count == 4);
 
-    REQUIRE(nullptr == allocate(heap, 0));         // Nothing to allocate
-    REQUIRE(getDiagnostics(heap).oom_count == 4);  // Not incremented! Zero allocation is not an OOM.
+    REQUIRE(nullptr == heap->allocate(0));           // Nothing to allocate
+    REQUIRE(heap->getDiagnostics().oom_count == 4);  // Not incremented! Zero allocation is not an OOM.
 
-    REQUIRE(getDiagnostics(heap).peak_allocated == 0);
-    REQUIRE(getDiagnostics(heap).allocated == 0);
-    REQUIRE(getDiagnostics(heap).peak_request_size == ArenaSize * 10U);
+    REQUIRE(heap->getDiagnostics().peak_allocated == 0);
+    REQUIRE(heap->getDiagnostics().allocated == 0);
+    REQUIRE(heap->getDiagnostics().peak_request_size == ArenaSize * 10U);
 
-    REQUIRE(nullptr != allocate(heap, MiB256 - O1HEAP_ALIGNMENT));  // Maximum possible allocation.
-    REQUIRE(getDiagnostics(heap).oom_count == 4);                   // OOM counter not incremented.
-    REQUIRE(getDiagnostics(heap).peak_allocated == MiB256);
-    REQUIRE(getDiagnostics(heap).allocated == MiB256);
-    REQUIRE(getDiagnostics(heap).peak_request_size == ArenaSize * 10U);  // Same size -- that one was unsuccessful.
+    REQUIRE(nullptr != heap->allocate(MiB256 - O1HEAP_ALIGNMENT));  // Maximum possible allocation.
+    REQUIRE(heap->getDiagnostics().oom_count == 4);                 // OOM counter not incremented.
+    REQUIRE(heap->getDiagnostics().peak_allocated == MiB256);
+    REQUIRE(heap->getDiagnostics().allocated == MiB256);
+    REQUIRE(heap->getDiagnostics().peak_request_size == ArenaSize * 10U);  // Same size -- that one was unsuccessful.
 }
 
 TEST_CASE("General: allocate: smallest")
@@ -254,13 +238,13 @@ TEST_CASE("General: allocate: smallest")
     auto heap = init(arena.get(), ArenaSize, &cs::enter, &cs::leave);
     REQUIRE(heap != nullptr);
 
-    void* const mem = allocate(heap, 1U);
+    void* const mem = heap->allocate(1U);
     REQUIRE(((cs::g_cnt_enter == 1) && (cs::g_cnt_leave == 1)));
     REQUIRE(mem != nullptr);
-    REQUIRE(getDiagnostics(heap).oom_count == 0);
-    REQUIRE(getDiagnostics(heap).peak_allocated == internal::FragmentSizeMin);
-    REQUIRE(getDiagnostics(heap).allocated == internal::FragmentSizeMin);
-    REQUIRE(getDiagnostics(heap).peak_request_size == 1);
+    REQUIRE(heap->getDiagnostics().oom_count == 0);
+    REQUIRE(heap->getDiagnostics().peak_allocated == internal::FragmentSizeMin);
+    REQUIRE(heap->getDiagnostics().allocated == internal::FragmentSizeMin);
+    REQUIRE(heap->getDiagnostics().peak_request_size == 1);
     REQUIRE(((cs::g_cnt_enter == 5) && (cs::g_cnt_leave == 5)));
 
     auto frag = internal::Fragment::constructFromAllocatedMemory(mem);
@@ -271,7 +255,7 @@ TEST_CASE("General: allocate: smallest")
     REQUIRE(frag.header.next->header.size == (heap->diagnostics.capacity - frag.header.size));
     REQUIRE(!frag.header.next->header.used);
 
-    deallocate(heap, mem);
+    heap->free(mem);
 }
 
 TEST_CASE("General: allocate: size_t overflow")
@@ -289,10 +273,10 @@ TEST_CASE("General: allocate: size_t overflow")
     REQUIRE(heap->diagnostics.capacity < ArenaSize);
     for (auto i = 1U; i <= 2U; i++)
     {
-        REQUIRE(nullptr == allocate(heap, size_max / i));
-        REQUIRE(nullptr == allocate(heap, size_max / i + 1U));  // May overflow to 0.
-        REQUIRE(nullptr == allocate(heap, size_max / i - 1U));
-        REQUIRE(nullptr == allocate(heap, internal::FragmentSizeMax - O1HEAP_ALIGNMENT + 1U));
+        REQUIRE(nullptr == heap->allocate(size_max / i));
+        REQUIRE(nullptr == heap->allocate(size_max / i + 1U));  // May overflow to 0.
+        REQUIRE(nullptr == heap->allocate(size_max / i - 1U));
+        REQUIRE(nullptr == heap->allocate(internal::FragmentSizeMax - O1HEAP_ALIGNMENT + 1U));
     }
 
     // Over-commit the arena -- it is SMALLER than the size we're providing; it's an UB but for a test it's acceptable.
@@ -301,14 +285,14 @@ TEST_CASE("General: allocate: size_t overflow")
     REQUIRE(heap->diagnostics.capacity == internal::FragmentSizeMax);
     for (auto i = 1U; i <= 2U; i++)
     {
-        REQUIRE(nullptr == allocate(heap, size_max / i));
-        REQUIRE(nullptr == allocate(heap, size_max / i + 1U));
-        REQUIRE(nullptr == allocate(heap, size_max / i - 1U));
-        REQUIRE(nullptr == allocate(heap, internal::FragmentSizeMax - O1HEAP_ALIGNMENT + 1U));
+        REQUIRE(nullptr == heap->allocate(size_max / i));
+        REQUIRE(nullptr == heap->allocate(size_max / i + 1U));
+        REQUIRE(nullptr == heap->allocate(size_max / i - 1U));
+        REQUIRE(nullptr == heap->allocate(internal::FragmentSizeMax - O1HEAP_ALIGNMENT + 1U));
     }
 
     // Make sure the max-sized fragments are allocatable.
-    void* const mem = allocate(heap, internal::FragmentSizeMax - O1HEAP_ALIGNMENT);
+    void* const mem = heap->allocate(internal::FragmentSizeMax - O1HEAP_ALIGNMENT);
     REQUIRE(mem != nullptr);
 
     auto frag = internal::Fragment::constructFromAllocatedMemory(mem);
@@ -317,8 +301,8 @@ TEST_CASE("General: allocate: size_t overflow")
     REQUIRE(frag.header.prev == nullptr);
     REQUIRE(frag.header.used);
 
-    REQUIRE(getDiagnostics(heap).peak_allocated == internal::FragmentSizeMax);
-    REQUIRE(getDiagnostics(heap).allocated == internal::FragmentSizeMax);
+    REQUIRE(heap->getDiagnostics().peak_allocated == internal::FragmentSizeMax);
+    REQUIRE(heap->getDiagnostics().allocated == internal::FragmentSizeMax);
 
     REQUIRE(heap->nonempty_bin_mask == 0);
     REQUIRE(std::all_of(std::begin(heap->bins), std::end(heap->bins), [](auto* p) { return p == nullptr; }));

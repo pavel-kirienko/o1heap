@@ -15,7 +15,6 @@
 // Authors: Pavel Kirienko <pavel.kirienko@zubax.com>
 
 #include "internal.hpp"
-#include <catch.hpp>
 
 TEST_CASE("Private: isPowerOf2")
 {
