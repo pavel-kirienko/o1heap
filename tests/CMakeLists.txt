@@ -59,9 +59,8 @@ function(gen_test_matrix name files compile_definitions)
 
     if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         gen_test("${name}_cov"      "${files}" "${compile_definitions}"          c_std_11
-                 "-g -O0 -fprofile-arcs -ftest-coverage"
-                 "-fprofile-arcs -ftest-coverage")
-        target_link_libraries("${name}_cov" gcov)
+                 "-g -O0 --coverage"
+                 "--coverage")
     endif()
 endfunction()
 

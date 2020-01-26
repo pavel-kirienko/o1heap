@@ -18,9 +18,16 @@ matrix:
             - gcc-9-multilib
             - linux-libc-dev:i386
       script:
+        # Build
         - CC=gcc-9 && CXX=g++-9 && cmake tests
         - build-wrapper-linux-x86-64 --out-dir sonar-dump make all  # The build wrapper comes from Sonar Cloud.
+        # Test
         - make test
+        # Generate coverage report
+        # TODO: COMBINE COVERAGE FROM ALL EXECUTABLES!
+        - find CMakeFiles/test_general_cov.dir/ -name 'o1heap.c.*' -type f -print -exec mv -f {} . \;
+        - gcov o1heap/o1heap.c --object-file o1heap*gcda --object-file o1heap*gcno
+        # Analyze
         - sonar-scanner
 
     # -------------------- Clang 9 --------------------
