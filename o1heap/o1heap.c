@@ -156,8 +156,8 @@ O1HEAP_PRIVATE void invoke(const O1HeapHook hook)
     }
 }
 
-O1HEAP_PRIVATE bool audit(const O1HeapInstance* const handle, void* const pointer);
-O1HEAP_PRIVATE bool audit(const O1HeapInstance* const handle, void* const pointer)
+O1HEAP_PRIVATE bool audit(const O1HeapInstance* const handle, const void* const pointer);
+O1HEAP_PRIVATE bool audit(const O1HeapInstance* const handle, const void* const pointer)
 {
     O1HEAP_ASSERT(handle != NULL);
     O1HEAP_ASSERT(handle->diagnostics.capacity <= FRAGMENT_SIZE_MAX);
@@ -170,26 +170,27 @@ O1HEAP_PRIVATE bool audit(const O1HeapInstance* const handle, void* const pointe
         const size_t heap_range_top    = heap_range_bottom + handle->diagnostics.capacity;
         const size_t fragment_address  = ((size_t) pointer) - O1HEAP_ALIGNMENT;
 
-        const bool pointer_is_valid = (fragment_address % O1HEAP_ALIGNMENT == 0U) &&
+        const bool pointer_is_valid = ((fragment_address % O1HEAP_ALIGNMENT) == 0U) &&
                                       (fragment_address >= heap_range_bottom) && (fragment_address <= heap_range_top);
         if (O1HEAP_LIKELY(pointer_is_valid))
         {
-            Fragment* const frag = (Fragment*) (void*) (((uint8_t*) pointer) - O1HEAP_ALIGNMENT);
-            O1HEAP_ASSERT(((size_t) frag) % sizeof(Fragment*) == 0U);  // Alignment is checked above.
+            const Fragment* const frag =
+                (const Fragment*) (const void*) (((const uint8_t*) pointer) - O1HEAP_ALIGNMENT);
+            O1HEAP_ASSERT((((size_t) frag) % sizeof(Fragment*)) == 0U);  // Alignment is checked above.
 
             const bool frag_is_valid =
                 frag->header.used && (frag->header.size <= handle->diagnostics.capacity) &&
                 (frag->header.size >= FRAGMENT_SIZE_MIN) && ((frag->header.size % FRAGMENT_SIZE_MIN) == 0U) &&
                 // The linked list pointers are aligned correctly.
-                (((size_t) frag->header.next) % sizeof(Fragment*) == 0U) &&
-                (((size_t) frag->header.prev) % sizeof(Fragment*) == 0U) &&
-                (((size_t) frag->next_free) % sizeof(Fragment*) == 0U) &&
-                (((size_t) frag->prev_free) % sizeof(Fragment*) == 0U) &&
+                ((((size_t) frag->header.next) % sizeof(Fragment*)) == 0U) &&
+                ((((size_t) frag->header.prev) % sizeof(Fragment*)) == 0U) &&
+                ((((size_t) frag->next_free) % sizeof(Fragment*)) == 0U) &&
+                ((((size_t) frag->prev_free) % sizeof(Fragment*)) == 0U) &&
                 // The linked list is internally consistent -- the siblings are interlinked properly.
-                ((frag->header.next == NULL) ? true : (frag->header.next->header.prev == frag)) &&
-                ((frag->header.prev == NULL) ? true : (frag->header.prev->header.next == frag)) &&
-                ((frag->next_free == NULL) ? true : (frag->next_free->prev_free == frag)) &&
-                ((frag->prev_free == NULL) ? true : (frag->prev_free->next_free == frag));
+                ((frag->header.next == NULL) || (frag->header.next->header.prev == frag)) &&
+                ((frag->header.prev == NULL) || (frag->header.prev->header.next == frag)) &&
+                ((frag->next_free == NULL) || (frag->next_free->prev_free == frag)) &&
+                ((frag->prev_free == NULL) || (frag->prev_free->next_free == frag));
 
             valid = frag_is_valid;
         }
@@ -238,8 +239,8 @@ O1HEAP_PRIVATE void rebin(O1HeapInstance* const handle, Fragment* const fragment
 }
 
 /// Removes the specified block from its bin.
-O1HEAP_PRIVATE void unbin(O1HeapInstance* const handle, Fragment* const fragment);
-O1HEAP_PRIVATE void unbin(O1HeapInstance* const handle, Fragment* const fragment)
+O1HEAP_PRIVATE void unbin(O1HeapInstance* const handle, const Fragment* const fragment);
+O1HEAP_PRIVATE void unbin(O1HeapInstance* const handle, const Fragment* const fragment)
 {
     O1HEAP_ASSERT(handle != NULL);
     O1HEAP_ASSERT(fragment != NULL);
@@ -465,8 +466,8 @@ void o1heapFree(O1HeapInstance* const handle, void* const pointer)
         // Merge with siblings and insert the returned fragment into the appropriate bin and update metadata.
         Fragment* const prev       = frag->header.prev;
         Fragment* const next       = frag->header.next;
-        const bool      join_left  = (prev != NULL) && !prev->header.used;
-        const bool      join_right = (next != NULL) && !next->header.used;
+        const bool      join_left  = (prev != NULL) && (!prev->header.used);
+        const bool      join_right = (next != NULL) && (!next->header.used);
         if (join_left && join_right)  // [ prev ][ this ][ next ] => [ ------- prev ------- ]
         {
             unbin(handle, prev);
