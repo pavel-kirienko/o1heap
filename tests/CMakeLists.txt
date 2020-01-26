@@ -16,9 +16,6 @@
 
 cmake_minimum_required(VERSION 3.12)
 project(o1heap_tests C CXX)
-
-set(CMAKE_BUILD_TYPE Debug)
-
 enable_testing()
 
 # C options
@@ -45,22 +42,17 @@ function(gen_test name files compile_definitions compile_features compile_flags 
     target_compile_definitions(${name} PUBLIC ${compile_definitions})
     target_compile_features(${name} PUBLIC ${compile_features})
     set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${compile_flags}" LINK_FLAGS "${link_flags}")
-
     add_test("run_${name}" "${name}")
 endfunction()
 
 function(gen_test_matrix name files compile_definitions)
-    gen_test("${name}_c99_x64"      "${files}" "${compile_definitions}"          c_std_99 "-m64"        "-m64")
-    gen_test("${name}_c99_x32"      "${files}" "${compile_definitions}"          c_std_99 "-m32"        "-m32")
-    gen_test("${name}_c11_x64"      "${files}" "${compile_definitions}"          c_std_11 "-m64"        "-m64")
-    gen_test("${name}_c11_x32"      "${files}" "${compile_definitions}"          c_std_11 "-m32"        "-m32")
-    gen_test("${name}_c11_x64_fast" "${files}" "${compile_definitions};NDEBUG=1" c_std_11 "-m64 -Ofast" "-m64")
-    gen_test("${name}_c11_x32_fast" "${files}" "${compile_definitions};NDEBUG=1" c_std_11 "-m32 -Ofast" "-m32")
-
-    if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        gen_test("${name}_cov"      "${files}" "${compile_definitions}"          c_std_11
-                 "-g -O0 --coverage"
-                 "--coverage")
+    gen_test("${name}_c99_x64" "${files}" "${compile_definitions}" c_std_99 "-m64" "-m64")
+    gen_test("${name}_c99_x32" "${files}" "${compile_definitions}" c_std_99 "-m32" "-m32")
+    gen_test("${name}_c11_x64" "${files}" "${compile_definitions}" c_std_11 "-m64" "-m64")
+    gen_test("${name}_c11_x32" "${files}" "${compile_definitions}" c_std_11 "-m32" "-m32")
+    # Coverage is only available for GCC builds.
+    if ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") AND (CMAKE_BUILD_TYPE STREQUAL "Debug"))
+        gen_test("${name}_cov" "${files}" "${compile_definitions}" c_std_11 "-g -O0 --coverage"  "--coverage")
     endif()
 endfunction()
 
