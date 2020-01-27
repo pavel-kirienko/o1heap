@@ -184,8 +184,6 @@ O1HEAP_PRIVATE bool audit(const O1HeapInstance* const handle, const void* const 
                 // The linked list pointers are aligned correctly.
                 ((((size_t) frag->header.next) % sizeof(Fragment*)) == 0U) &&
                 ((((size_t) frag->header.prev) % sizeof(Fragment*)) == 0U) &&
-                ((((size_t) frag->next_free) % sizeof(Fragment*)) == 0U) &&
-                ((((size_t) frag->prev_free) % sizeof(Fragment*)) == 0U) &&
                 // The linked list is internally consistent -- the siblings are interlinked properly.
                 ((frag->header.next == NULL) || (frag->header.next->header.prev == frag)) &&
                 ((frag->header.prev == NULL) || (frag->header.prev->header.next == frag));
@@ -399,7 +397,7 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
             O1HEAP_ASSERT(leftover % FRAGMENT_SIZE_MIN == 0U);       // Alignment check.
             if (O1HEAP_LIKELY(leftover >= FRAGMENT_SIZE_MIN))
             {
-                Fragment* const new_frag = (Fragment*) (void*) (((uint8_t*) frag) + leftover);
+                Fragment* const new_frag = (Fragment*) (void*) (((uint8_t*) frag) + fragment_size);
                 O1HEAP_ASSERT(((size_t) new_frag) % O1HEAP_ALIGNMENT == 0U);
                 new_frag->header.size = leftover;
                 new_frag->header.used = false;

@@ -51,6 +51,13 @@ void resetCounters()
     g_cnt_leave = 0;
 }
 
+void validateAndReset(const std::uint64_t cnt)
+{
+    REQUIRE(g_cnt_enter == cnt);
+    REQUIRE(g_cnt_leave == cnt);
+    resetCounters();
+}
+
 }  // namespace
 }  // namespace cs
 
@@ -85,6 +92,8 @@ auto init(void* const       base,
           const O1HeapHook  critical_section_enter = nullptr,
           const O1HeapHook  critical_section_leave = nullptr)
 {
+    using internal::Fragment;
+
     // Fill the beginning of the arena with random bytes (the entire arena may be too slow to fill).
     std::generate_n(reinterpret_cast<std::byte*>(base), std::min<std::size_t>(10'000U, size), getRandomByte);
 
@@ -107,8 +116,8 @@ auto init(void* const       base,
         REQUIRE((heap->nonempty_bin_mask & (heap->nonempty_bin_mask - 1U)) == 0);
         for (auto i = 0U; i < std::size(heap->bins); i++)
         {
-            const std::size_t min = internal::FragmentSizeMin << i;
-            const std::size_t max = (internal::FragmentSizeMin << i) * 2U - 1U;
+            const std::size_t min = Fragment::SizeMin << i;
+            const std::size_t max = (Fragment::SizeMin << i) * 2U - 1U;
             if ((heap->nonempty_bin_mask & (1ULL << i)) == 0U)
             {
                 REQUIRE(heap->bins.at(i) == nullptr);
@@ -122,8 +131,8 @@ auto init(void* const       base,
         }
 
         REQUIRE(heap->diagnostics.capacity < size);
-        REQUIRE(heap->diagnostics.capacity <= internal::FragmentSizeMax);
-        REQUIRE(heap->diagnostics.capacity > internal::FragmentSizeMin);
+        REQUIRE(heap->diagnostics.capacity <= Fragment::SizeMax);
+        REQUIRE(heap->diagnostics.capacity > Fragment::SizeMin);
         REQUIRE(heap->diagnostics.allocated == 0);
         REQUIRE(heap->diagnostics.oom_count == 0);
         REQUIRE(heap->diagnostics.peak_allocated == 0);
@@ -145,6 +154,8 @@ auto init(void* const       base,
 
 TEST_CASE("General: init")
 {
+    using internal::Fragment;
+
     std::cout << "sizeof(void*)=" << sizeof(void*) << "; sizeof(O1HeapInstance)=" << sizeof(internal::O1HeapInstance)
               << std::endl;
 
@@ -169,11 +180,11 @@ TEST_CASE("General: init")
                              (offset % 4U == 0U) ? &cs::leave : nullptr);
             if (heap == nullptr)
             {
-                REQUIRE(size <= sizeof(internal::O1HeapInstance) * 2U + internal::FragmentSizeMin * 2U);
+                REQUIRE(size <= sizeof(internal::O1HeapInstance) * 2U + Fragment::SizeMin * 2U);
             }
             else
             {
-                REQUIRE(size >= sizeof(internal::O1HeapInstance) + internal::FragmentSizeMin);
+                REQUIRE(size >= sizeof(internal::O1HeapInstance) + Fragment::SizeMin);
                 REQUIRE(reinterpret_cast<std::size_t>(heap) >= reinterpret_cast<std::size_t>(arena.data()));
                 REQUIRE(reinterpret_cast<std::size_t>(heap) % O1HEAP_ALIGNMENT == 0U);
             }
@@ -230,6 +241,8 @@ TEST_CASE("General: allocate: OOM")
 
 TEST_CASE("General: allocate: smallest")
 {
+    using internal::Fragment;
+
     cs::resetCounters();
 
     constexpr auto               ArenaSize = MiB * 300U;
@@ -242,12 +255,12 @@ TEST_CASE("General: allocate: smallest")
     REQUIRE(((cs::g_cnt_enter == 1) && (cs::g_cnt_leave == 1)));
     REQUIRE(mem != nullptr);
     REQUIRE(heap->getDiagnostics().oom_count == 0);
-    REQUIRE(heap->getDiagnostics().peak_allocated == internal::FragmentSizeMin);
-    REQUIRE(heap->getDiagnostics().allocated == internal::FragmentSizeMin);
+    REQUIRE(heap->getDiagnostics().peak_allocated == Fragment::SizeMin);
+    REQUIRE(heap->getDiagnostics().allocated == Fragment::SizeMin);
     REQUIRE(heap->getDiagnostics().peak_request_size == 1);
     REQUIRE(((cs::g_cnt_enter == 5) && (cs::g_cnt_leave == 5)));
 
-    auto& frag = internal::Fragment::constructFromAllocatedMemory(mem);
+    auto& frag = Fragment::constructFromAllocatedMemory(mem);
     REQUIRE(frag.header.size == (O1HEAP_ALIGNMENT * 2U));
     REQUIRE(frag.header.next != nullptr);
     REQUIRE(frag.header.prev == nullptr);
@@ -260,6 +273,8 @@ TEST_CASE("General: allocate: smallest")
 
 TEST_CASE("General: allocate: size_t overflow")
 {
+    using internal::Fragment;
+
     constexpr auto size_max = std::numeric_limits<std::size_t>::max();
 
     cs::resetCounters();
@@ -276,34 +291,250 @@ TEST_CASE("General: allocate: size_t overflow")
         REQUIRE(nullptr == heap->allocate(size_max / i));
         REQUIRE(nullptr == heap->allocate(size_max / i + 1U));  // May overflow to 0.
         REQUIRE(nullptr == heap->allocate(size_max / i - 1U));
-        REQUIRE(nullptr == heap->allocate(internal::FragmentSizeMax - O1HEAP_ALIGNMENT + 1U));
+        REQUIRE(nullptr == heap->allocate(Fragment::SizeMax - O1HEAP_ALIGNMENT + 1U));
     }
 
     // Over-commit the arena -- it is SMALLER than the size we're providing; it's an UB but for a test it's acceptable.
     heap = init(arena.get(), size_max);
     REQUIRE(heap != nullptr);
-    REQUIRE(heap->diagnostics.capacity == internal::FragmentSizeMax);
+    REQUIRE(heap->diagnostics.capacity == Fragment::SizeMax);
     for (auto i = 1U; i <= 2U; i++)
     {
         REQUIRE(nullptr == heap->allocate(size_max / i));
         REQUIRE(nullptr == heap->allocate(size_max / i + 1U));
         REQUIRE(nullptr == heap->allocate(size_max / i - 1U));
-        REQUIRE(nullptr == heap->allocate(internal::FragmentSizeMax - O1HEAP_ALIGNMENT + 1U));
+        REQUIRE(nullptr == heap->allocate(Fragment::SizeMax - O1HEAP_ALIGNMENT + 1U));
     }
 
     // Make sure the max-sized fragments are allocatable.
-    void* const mem = heap->allocate(internal::FragmentSizeMax - O1HEAP_ALIGNMENT);
+    void* const mem = heap->allocate(Fragment::SizeMax - O1HEAP_ALIGNMENT);
     REQUIRE(mem != nullptr);
 
-    auto& frag = internal::Fragment::constructFromAllocatedMemory(mem);
-    REQUIRE(frag.header.size == internal::FragmentSizeMax);
+    auto& frag = Fragment::constructFromAllocatedMemory(mem);
+    REQUIRE(frag.header.size == Fragment::SizeMax);
     REQUIRE(frag.header.next == nullptr);
     REQUIRE(frag.header.prev == nullptr);
     REQUIRE(frag.header.used);
 
-    REQUIRE(heap->getDiagnostics().peak_allocated == internal::FragmentSizeMax);
-    REQUIRE(heap->getDiagnostics().allocated == internal::FragmentSizeMax);
+    REQUIRE(heap->getDiagnostics().peak_allocated == Fragment::SizeMax);
+    REQUIRE(heap->getDiagnostics().allocated == Fragment::SizeMax);
 
     REQUIRE(heap->nonempty_bin_mask == 0);
     REQUIRE(std::all_of(std::begin(heap->bins), std::end(heap->bins), [](auto* p) { return p == nullptr; }));
 }
+
+TEST_CASE("General: free")
+{
+    using internal::Fragment;
+
+    constexpr auto               ArenaSize = MiB * 300U;
+    std::shared_ptr<std::byte[]> arena(new std::byte[ArenaSize]);  // NOLINT avoid-c-arrays
+
+    auto heap = init(arena.get(), ArenaSize, &cs::enter, &cs::leave);
+    REQUIRE(heap != nullptr);
+
+    REQUIRE(nullptr == heap->allocate(0U));
+    REQUIRE(heap->diagnostics.allocated == 0U);
+    heap->free(nullptr);
+    REQUIRE(heap->diagnostics.peak_allocated == 0U);
+    REQUIRE(heap->diagnostics.peak_request_size == 0U);
+    REQUIRE(heap->diagnostics.oom_count == 0U);
+
+    cs::resetCounters();
+
+    std::size_t allocated         = 0U;
+    std::size_t peak_allocated    = 0U;
+    std::size_t peak_request_size = 0U;
+
+    const auto alloc = [&](const std::size_t amount, const std::vector<std::pair<bool, std::size_t>>& reference) {
+        const auto p = heap->allocate(amount);
+        if (amount > 0U)
+        {
+            REQUIRE(p != nullptr);
+            const auto& frag = Fragment::constructFromAllocatedMemory(p);
+            REQUIRE(frag.header.used);
+            REQUIRE((frag.header.size & (frag.header.size - 1U)) == 0U);
+            REQUIRE(frag.header.size >= (amount + O1HEAP_ALIGNMENT));
+            REQUIRE(frag.header.size <= Fragment::SizeMax);
+            allocated += frag.header.size;
+            peak_allocated    = std::max(peak_allocated, allocated);
+            peak_request_size = std::max(peak_request_size, amount);
+        }
+        else
+        {
+            REQUIRE(p == nullptr);
+        }
+        REQUIRE(heap->diagnostics.allocated == allocated);
+        REQUIRE(heap->diagnostics.peak_allocated == peak_allocated);
+        REQUIRE(heap->diagnostics.peak_request_size == peak_request_size);
+        cs::validateAndReset(1);
+        heap->matchFragments(reference);
+        return p;
+    };
+
+    const auto dealloc = [&](void* const p, const std::vector<std::pair<bool, std::size_t>>& reference) {
+        if (p != nullptr)
+        {
+            const auto& frag = Fragment::constructFromAllocatedMemory(p);
+            REQUIRE(frag.header.used);
+            REQUIRE(allocated >= frag.header.size);
+            allocated -= frag.header.size;
+            heap->free(p);
+            cs::validateAndReset(1);
+        }
+        else
+        {
+            heap->free(p);
+            cs::validateAndReset(0);
+        }
+        REQUIRE(heap->diagnostics.allocated == allocated);
+        REQUIRE(heap->diagnostics.peak_allocated == peak_allocated);
+        REQUIRE(heap->diagnostics.peak_request_size == peak_request_size);
+        heap->matchFragments(reference);
+    };
+
+    constexpr auto X = true;   // used
+    constexpr auto O = false;  // free
+
+    auto a = alloc(32U,
+                   {
+                       {X, 64U},
+                       {O, 0U},
+                   });
+    auto b = alloc(32U,
+                   {
+                       {X, 64U},
+                       {X, 64U},
+                       {O, 0U},
+                   });
+    auto c = alloc(32U,
+                   {
+                       {X, 64U},
+                       {X, 64U},
+                       {X, 64U},
+                       {O, 0U},
+                   });
+    auto d = alloc(32U,
+                   {
+                       {X, 64U},
+                       {X, 64U},
+                       {X, 64U},
+                       {X, 64U},
+                       {O, 0U},
+                   });
+    auto e = alloc(1024U,
+                   {
+                       {X, 64U},
+                       {X, 64U},
+                       {X, 64U},
+                       {X, 64U},
+                       {X, 2048U},
+                       {O, 0U},
+                   });
+    auto f = alloc(512U,
+                   {
+                       {X, 64U},    // a
+                       {X, 64U},    // b
+                       {X, 64U},    // c
+                       {X, 64U},    // d
+                       {X, 2048U},  // e
+                       {X, 1024U},  // f
+                       {O, 0U},
+                   });
+    dealloc(b,
+            {
+                {X, 64U},  // a
+                {O, 64U},
+                {X, 64U},    // c
+                {X, 64U},    // d
+                {X, 2048U},  // e
+                {X, 1024U},  // f
+                {O, 0U},
+            });
+    dealloc(a,
+            {
+                {O, 128U},   // joined right
+                {X, 64U},    // c
+                {X, 64U},    // d
+                {X, 2048U},  // e
+                {X, 1024U},  // f
+                {O, 0U},
+            });
+    dealloc(c,
+            {
+                {O, 192U},   // joined left
+                {X, 64U},    // d
+                {X, 2048U},  // e
+                {X, 1024U},  // f
+                {O, 0U},
+            });
+    dealloc(e,
+            {
+                {O, 192U},
+                {X, 64U},  // d
+                {O, 2048U},
+                {X, 1024U},  // f
+                {O, 0U},
+            });
+    auto g = alloc(400U,
+                   {
+                       {O, 192U},
+                       {X, 64U},   // d
+                       {X, 512U},  // g
+                       {O, 1536U},
+                       {X, 1024U},  // f
+                       {O, 0U},
+                   });
+    dealloc(f,
+            {
+                {O, 192U},
+                {X, 64U},   // d
+                {X, 512U},  // g
+                {O, 0U},    // joined left & right
+            });
+    dealloc(d,
+            {
+                {O, 256U},
+                {X, 512U},  // g
+                {O, 0U},
+            });
+    auto h = alloc(200U,
+                   {
+                       {X, 256U},  // h
+                       {X, 512U},  // g
+                       {O, 0U},
+                   });
+    auto i = alloc(32U,
+                   {
+                       {X, 256U},  // h
+                       {X, 512U},  // g
+                       {X, 64U},   // i
+                       {O, 0U},
+                   });
+    dealloc(g,
+            {
+                {X, 256U},  // h
+                {O, 512U},
+                {X, 64U},  // i
+                {O, 0U},
+            });
+    dealloc(h,
+            {
+                {O, 768U},
+                {X, 64U},  // i
+                {O, 0U},
+            });
+    dealloc(i,
+            {
+                {O, 0U},  // All heap is free.
+            });
+
+    REQUIRE(heap->diagnostics.allocated == 0U);
+    REQUIRE(heap->diagnostics.peak_allocated == 3328U);
+    REQUIRE(heap->diagnostics.peak_request_size == 1024U);
+    REQUIRE(heap->diagnostics.oom_count == 0U);
+}
+
+#ifdef NDEBUG
+// TODO test bad free
+#endif
