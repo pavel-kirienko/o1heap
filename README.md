@@ -1,7 +1,7 @@
 # O(1) heap
 
 [![Build Status](https://travis-ci.org/pavel-kirienko/o1heap.svg?branch=master)](https://travis-ci.org/pavel-kirienko/o1heap)
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=pavel-kirienko_o1heap&metric=alert_status)](https://sonarcloud.io/dashboard?id=pavel-kirienko_o1heap)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=pavel-kirienko_o1heap&metric=coverage)](https://sonarcloud.io/dashboard?id=pavel-kirienko_o1heap)
 [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=pavel-kirienko_o1heap&metric=reliability_rating)](https://sonarcloud.io/dashboard?id=pavel-kirienko_o1heap)
 
 ## Description

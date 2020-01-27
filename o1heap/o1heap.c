@@ -108,6 +108,13 @@ struct O1HeapInstance
     O1HeapDiagnostics diagnostics;
 };
 
+/// The amount of space allocated for the heap instance.
+/// Its size is padded up to O1HEAP_ALIGNMENT to ensure correct alignment of the allocation arena that follows.
+#define INSTANCE_SIZE_PADDED ((sizeof(O1HeapInstance) + O1HEAP_ALIGNMENT - 1U) & ~(O1HEAP_ALIGNMENT - 1U))
+
+static_assert(INSTANCE_SIZE_PADDED >= sizeof(O1HeapInstance), "Invalid instance footprint computation");
+static_assert((INSTANCE_SIZE_PADDED % O1HEAP_ALIGNMENT) == 0U, "Invalid instance footprint computation");
+
 /// True if the argument is an integer power of two or zero.
 O1HEAP_PRIVATE bool isPowerOf2(const size_t x);
 O1HEAP_PRIVATE bool isPowerOf2(const size_t x)
@@ -283,26 +290,19 @@ O1HeapInstance* o1heapInit(void* const      base,
     }
 
     O1HeapInstance* out = NULL;
-    if ((adjusted_base != NULL) && (adjusted_size >= (sizeof(O1HeapInstance) + (FRAGMENT_SIZE_MIN * 2U))))
+    if ((adjusted_base != NULL) && (adjusted_size >= (INSTANCE_SIZE_PADDED + FRAGMENT_SIZE_MIN)))
     {
         // Allocate the heap metadata structure in the beginning of the arena.
         O1HEAP_ASSERT(((size_t) adjusted_base) % sizeof(O1HeapInstance*) == 0U);
         out = (O1HeapInstance*) (void*) adjusted_base;
-        adjusted_base += sizeof(O1HeapInstance);
-        adjusted_size -= sizeof(O1HeapInstance);
+        adjusted_base += INSTANCE_SIZE_PADDED;
+        adjusted_size -= INSTANCE_SIZE_PADDED;
+        O1HEAP_ASSERT((((size_t) adjusted_base) % O1HEAP_ALIGNMENT) == 0U);
         out->nonempty_bin_mask      = 0U;
         out->critical_section_enter = critical_section_enter;
         out->critical_section_leave = critical_section_leave;
 
-        // Align the start of the storage.
-        while ((((size_t) adjusted_base) % O1HEAP_ALIGNMENT) != 0U)
-        {
-            adjusted_base++;
-            O1HEAP_ASSERT(adjusted_size > 0U);
-            adjusted_size--;
-        }
-
-        // Align the size; i.e., truncate the end.
+        // Align the size; i.e., truncate the end. The base pointer is aligned already.
         if (adjusted_size > FRAGMENT_SIZE_MAX)
         {
             adjusted_size = FRAGMENT_SIZE_MAX;
@@ -321,6 +321,7 @@ O1HeapInstance* o1heapInit(void* const      base,
             out->bins[i] = NULL;
         }
 
+        // Initialize the root fragment.
         O1HEAP_ASSERT((((size_t) adjusted_base) % O1HEAP_ALIGNMENT) == 0U);
         O1HEAP_ASSERT((((size_t) adjusted_base) % sizeof(Fragment*)) == 0U);
         Fragment* const frag = (Fragment*) (void*) adjusted_base;
