@@ -47,7 +47,7 @@ function(gen_test name files compile_definitions compile_features compile_flags 
     target_compile_definitions(${name} PUBLIC ${compile_definitions})
     target_compile_features(${name} PUBLIC ${compile_features})
     set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${compile_flags}" LINK_FLAGS "${link_flags}")
-    add_test("run_${name}" "${name}")
+    add_test("run_${name}" "${name}" --rng-seed time)
 endfunction()
 
 function(gen_test_matrix name files compile_definitions)
