@@ -95,9 +95,10 @@ struct Fragment final
         REQUIRE(header.size <= SizeMax);
         REQUIRE((header.size % SizeMin) == 0U);
 
-        // Heap fragment interlinking.
+        // Heap fragment interlinking. Free blocks cannot neighbor each other because they are supposed to be merged.
         if (header.next != nullptr)
         {
+            REQUIRE((header.used || header.next->header.used));
             const auto adr = reinterpret_cast<std::size_t>(header.next);
             REQUIRE((adr % sizeof(void*)) == 0U);
             REQUIRE(header.next->header.prev == this);
@@ -106,6 +107,7 @@ struct Fragment final
         }
         if (header.prev != nullptr)
         {
+            REQUIRE((header.used || header.prev->header.used));
             const auto adr = reinterpret_cast<std::size_t>(header.prev);
             REQUIRE((adr % sizeof(void*)) == 0U);
             REQUIRE(header.prev->header.next == this);

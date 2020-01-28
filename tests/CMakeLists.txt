@@ -21,17 +21,17 @@ enable_testing()
 if (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
     # assert() shall be disabled in release builds to enable testing of bad free() calls.
     add_definitions(-DNDEBUG=1)
-endif()
+endif ()
 
 # C options
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Werror -pedantic")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Werror -pedantic -fstrict-aliasing")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wdouble-promotion -Wswitch-enum -Wfloat-equal -Wundef")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wconversion -Wtype-limits")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wsign-conversion -Wcast-align -Wmissing-declarations")
 
 # C++ options
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Werror -pedantic")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Werror -pedantic -fstrict-aliasing")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wdouble-promotion -Wswitch-enum -Wfloat-equal -Wundef")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wconversion -Wsign-promo")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wsign-conversion -Wcast-align -Wmissing-declarations")
@@ -57,8 +57,8 @@ function(gen_test_matrix name files compile_definitions)
     gen_test("${name}_c11_x32" "${files}" "${compile_definitions}" c_std_11 "-m32" "-m32")
     # Coverage is only available for GCC builds.
     if ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") AND (CMAKE_BUILD_TYPE STREQUAL "Debug"))
-        gen_test("${name}_cov" "${files}" "${compile_definitions}" c_std_11 "-g -O0 --coverage"  "--coverage")
-    endif()
+        gen_test("${name}_cov" "${files}" "${compile_definitions}" c_std_11 "-g -O0 --coverage" "--coverage")
+    endif ()
 endfunction()
 
 gen_test_matrix(test_private test_private.cpp O1HEAP_EXPOSE_INTERNALS=1)
