@@ -50,12 +50,18 @@ matrix:
             - libstdc++-7-dev:i386
       script:
         - wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sudo ./llvm.sh 9
-        - clang++-9 -E -x c++ - -v < /dev/null    # Print the Clang configuration for troubleshooting purposes
+        - cla ng++-9 -E -x c++ - -v < /dev/null    # Print the Clang configuration for troubleshooting purposes
         # DEBUG
         - cmake -DCMAKE_C_COMPILER=clang-9 -DCMAKE_CXX_COMPILER=clang++-9 tests -DCMAKE_BUILD_TYPE=Debug
         - make VERBOSE=1 && make test
         # RELEASE
         - cmake -DCMAKE_C_COMPILER=clang-9 -DCMAKE_CXX_COMPILER=clang++-9 tests -DCMAKE_BUILD_TYPE=Release
+        - make VERBOSE=1 && make test
+        # RELWITHDEBINFO
+        - cmake -DCMAKE_C_COMPILER=clang-9 -DCMAKE_CXX_COMPILER=clang++-9 tests -DCMAKE_BUILD_TYPE=RelWithDebInfo
+        - make VERBOSE=1 && make test
+        # MINSIZEREL
+        - cmake -DCMAKE_C_COMPILER=clang-9 -DCMAKE_CXX_COMPILER=clang++-9 tests -DCMAKE_BUILD_TYPE=MinSizeRel
         - make VERBOSE=1 && make test
 
     # -------------------- Static analysis --------------------
