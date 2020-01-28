@@ -26,6 +26,7 @@
 #include <cstring>
 #include <exception>
 #include <limits>
+#include <sstream>
 #include <vector>
 
 /// Definitions that are not exposed by the library but that are needed for testing.
@@ -221,6 +222,35 @@ struct O1HeapInstance final
             frag = frag->header.next;
         }
         REQUIRE(frag == nullptr);
+    }
+
+    [[nodiscard]] auto visualize() const -> std::string
+    {
+        std::stringstream buffer;
+        buffer << "Heap diagnostics: "
+               << "capacity=" << diagnostics.capacity << " B, "
+               << "allocated=" << diagnostics.allocated << " B, "
+               << "peak_allocated=" << diagnostics.peak_allocated << " B, "
+               << "peak_request_size=" << diagnostics.peak_request_size << " B, "
+               << "oom_count=" << diagnostics.oom_count << ".\n"
+               << "Size of used blocks is printed as-is, size of free blocks is printed in [brackets]. "
+               << "All sizes are divided by the min fragment size (" << Fragment::SizeMin << " bytes).\n";
+        auto frag = getFirstFragment();
+        do
+        {
+            const auto size_blocks = frag->header.size / Fragment::SizeMin;
+            if (frag->header.used)
+            {
+                buffer << size_blocks << " ";
+            }
+            else
+            {
+                buffer << "[" << size_blocks << "] ";
+            }
+            frag = frag->header.next;
+        } while (frag != nullptr);
+        buffer << "\n";
+        return buffer.str();
     }
 
     O1HeapInstance()                       = delete;

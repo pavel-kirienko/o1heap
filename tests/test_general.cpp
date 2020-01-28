@@ -379,6 +379,7 @@ TEST_CASE("General: free")
     };
 
     const auto dealloc = [&](void* const p, const std::vector<std::pair<bool, std::size_t>>& reference) {
+        INFO(heap->visualize());
         if (p != nullptr)
         {
             // Overwrite some to ensure that the allocator does not make implicit assumptions about the memory use.
@@ -568,6 +569,7 @@ TEST_CASE("General: free: heap corruption protection")
     };
 
     const auto dealloc = [&](void* const p, const std::vector<std::pair<bool, std::size_t>>& reference) {
+        INFO(heap->visualize());
         heap->free(p);
         heap->matchFragments(reference);
     };
@@ -719,3 +721,88 @@ TEST_CASE("General: free: heap corruption protection")
             });
 }
 #endif
+
+/// This test has been empirically tuned to expand its state space coverage.
+/// If any new behaviors need to be tested, please consider writing another test instead of changing this one.
+TEST_CASE("General: random A")
+{
+    using internal::Fragment;
+
+    constexpr auto               ArenaSize = MiB * 300U;
+    std::shared_ptr<std::byte[]> arena(new std::byte[ArenaSize]);  // NOLINT avoid-c-arrays
+    auto                         heap = init(arena.get(), ArenaSize, cs::enter, cs::leave);
+    REQUIRE(heap != nullptr);
+
+    std::vector<void*> pointers;
+
+    std::size_t   allocated         = 0U;
+    std::size_t   peak_allocated    = 0U;
+    std::size_t   peak_request_size = 0U;
+    std::uint64_t oom_count         = 0U;
+
+    std::random_device random_device;
+    std::mt19937       random_generator(random_device());
+
+    const auto allocate = [&]() {
+        std::uniform_int_distribution<std::size_t> dis(0, ArenaSize / 1000U);
+
+        const std::size_t amount = dis(random_generator) + 1U;
+        const auto        ptr    = heap->allocate(amount);
+        if (ptr != nullptr)
+        {
+            // Overwrite all to ensure that the allocator does not make implicit assumptions about the memory use.
+            std::generate_n(reinterpret_cast<std::byte*>(ptr), amount, getRandomByte);
+            pointers.push_back(ptr);
+            const auto& frag = Fragment::constructFromAllocatedMemory(ptr);
+            allocated += frag.header.size;
+            peak_allocated = std::max(peak_allocated, allocated);
+        }
+        else
+        {
+            if (amount > 0U)
+            {
+                oom_count++;
+            }
+        }
+        peak_request_size = std::max(peak_request_size, amount);
+    };
+
+    const auto deallocate = [&]() {
+        if (!pointers.empty())
+        {
+            std::uniform_int_distribution<decltype(pointers)::difference_type>
+                        dis(0, static_cast<decltype(pointers)::difference_type>(std::size(pointers) - 1));
+            const auto  it  = std::begin(pointers) + dis(random_generator);
+            void* const ptr = *it;
+            (void) pointers.erase(it);
+            if (ptr != nullptr)
+            {
+                const auto& frag = Fragment::constructFromAllocatedMemory(ptr);
+                frag.validateInvariants();
+                REQUIRE(allocated >= frag.header.size);
+                allocated -= frag.header.size;
+            }
+            heap->free(ptr);
+        }
+    };
+
+    // The memory use is growing slowly from zero.
+    // We stop the test when it's been running near the max heap utilization for long enough.
+    while (heap->diagnostics.oom_count < 1000U)
+    {
+        for (auto i = 0U; i < 100U; i++)
+        {
+            allocate();
+        }
+        for (auto i = 0U; i < 50U; i++)
+        {
+            deallocate();
+        }
+        REQUIRE(heap->diagnostics.allocated == allocated);
+        REQUIRE(heap->diagnostics.peak_allocated == peak_allocated);
+        REQUIRE(heap->diagnostics.peak_request_size == peak_request_size);
+        REQUIRE(heap->diagnostics.oom_count == oom_count);
+
+        std::cout << heap->visualize() << std::endl;
+    }
+}
