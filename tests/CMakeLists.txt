@@ -18,6 +18,11 @@ cmake_minimum_required(VERSION 3.12)
 project(o1heap_tests C CXX)
 enable_testing()
 
+if (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+    # assert() shall be disabled in release builds to enable testing of bad free() calls.
+    add_definitions(-DNDEBUG=1)
+endif()
+
 # C options
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Werror -pedantic")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wdouble-promotion -Wswitch-enum -Wfloat-equal -Wundef")

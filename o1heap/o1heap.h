@@ -120,7 +120,7 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount);
 
 /// The semantics follows free() with additional guarantees the full list of which is provided below.
 ///
-/// If the pointer does not point to a previously allocated block, the behavior is undefined.
+/// In general, if the pointer does not point to a previously allocated block, the behavior is undefined.
 /// The library contains a set of reasonably reliable yet non-intrusive heuristics that are intended to
 /// detect whether the supplied pointer is valid. If the pointer is proven to be invalid,
 /// an assertion failure is triggered (unless disabled) and no further actions are performed

@@ -192,7 +192,6 @@ struct O1HeapInstance final
         REQUIRE((frag->header.size % Fragment::SizeMin) == 0U);
         REQUIRE(((frag->header.next == nullptr) || (frag->header.next->header.prev == frag)));
         REQUIRE(frag->header.prev == nullptr);  // The first fragment has no prev!
-        REQUIRE(frag->prev_free == nullptr);    // The first fragment has no prev!
         return frag;
     }
 

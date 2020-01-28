@@ -132,7 +132,7 @@ auto init(void* const       base,
 
         REQUIRE(heap->diagnostics.capacity < size);
         REQUIRE(heap->diagnostics.capacity <= Fragment::SizeMax);
-        REQUIRE(heap->diagnostics.capacity > Fragment::SizeMin);
+        REQUIRE(heap->diagnostics.capacity >= Fragment::SizeMin);
         REQUIRE(heap->diagnostics.allocated == 0);
         REQUIRE(heap->diagnostics.oom_count == 0);
         REQUIRE(heap->diagnostics.peak_allocated == 0);
@@ -351,11 +351,16 @@ TEST_CASE("General: free")
         if (amount > 0U)
         {
             REQUIRE(p != nullptr);
+
+            // Overwrite all to ensure that the allocator does not make implicit assumptions about the memory use.
+            std::generate_n(reinterpret_cast<std::byte*>(p), amount, getRandomByte);
+
             const auto& frag = Fragment::constructFromAllocatedMemory(p);
             REQUIRE(frag.header.used);
             REQUIRE((frag.header.size & (frag.header.size - 1U)) == 0U);
             REQUIRE(frag.header.size >= (amount + O1HEAP_ALIGNMENT));
             REQUIRE(frag.header.size <= Fragment::SizeMax);
+
             allocated += frag.header.size;
             peak_allocated    = std::max(peak_allocated, allocated);
             peak_request_size = std::max(peak_request_size, amount);
@@ -364,6 +369,7 @@ TEST_CASE("General: free")
         {
             REQUIRE(p == nullptr);
         }
+
         REQUIRE(heap->diagnostics.allocated == allocated);
         REQUIRE(heap->diagnostics.peak_allocated == peak_allocated);
         REQUIRE(heap->diagnostics.peak_request_size == peak_request_size);
@@ -375,6 +381,9 @@ TEST_CASE("General: free")
     const auto dealloc = [&](void* const p, const std::vector<std::pair<bool, std::size_t>>& reference) {
         if (p != nullptr)
         {
+            // Overwrite some to ensure that the allocator does not make implicit assumptions about the memory use.
+            std::generate_n(reinterpret_cast<std::byte*>(p), O1HEAP_ALIGNMENT, getRandomByte);
+
             const auto& frag = Fragment::constructFromAllocatedMemory(p);
             REQUIRE(frag.header.used);
             REQUIRE(allocated >= frag.header.size);
@@ -536,5 +545,177 @@ TEST_CASE("General: free")
 }
 
 #ifdef NDEBUG
-// TODO test bad free
+TEST_CASE("General: free: heap corruption protection")
+{
+    using internal::Fragment;
+
+    assert(false);  // Make sure assertion checks are disabled.
+
+    constexpr auto               ArenaSize = MiB * 300U;
+    std::shared_ptr<std::byte[]> arena(new std::byte[ArenaSize]);  // NOLINT avoid-c-arrays
+    auto                         heap = init(arena.get(), ArenaSize);
+    REQUIRE(heap != nullptr);
+
+    const auto alloc = [&](const std::size_t amount, const std::vector<std::pair<bool, std::size_t>>& reference) {
+        const auto p = heap->allocate(amount);
+        if (p != nullptr)
+        {
+            // Overwrite all to ensure that the allocator does not make implicit assumptions about the memory use.
+            std::generate_n(reinterpret_cast<std::byte*>(p), amount, getRandomByte);
+        }
+        heap->matchFragments(reference);
+        return p;
+    };
+
+    const auto dealloc = [&](void* const p, const std::vector<std::pair<bool, std::size_t>>& reference) {
+        heap->free(p);
+        heap->matchFragments(reference);
+    };
+
+    constexpr auto X = true;   // used
+    constexpr auto O = false;  // free
+
+    auto a = alloc(32U,
+                   {
+                       {X, 64U},
+                       {O, 0U},
+                   });
+    auto b = alloc(32U,
+                   {
+                       {X, 64U},
+                       {X, 64U},
+                       {O, 0U},
+                   });
+    auto c = alloc(32U,
+                   {
+                       {X, 64U},
+                       {X, 64U},
+                       {X, 64U},
+                       {O, 0U},
+                   });
+    auto d = alloc(32U,
+                   {
+                       {X, 64U},
+                       {X, 64U},
+                       {X, 64U},
+                       {X, 64U},
+                       {O, 0U},
+                   });
+
+    CAPTURE(a, d, c, d);
+
+    dealloc(b,
+            {
+                {X, 64U},  // a
+                {O, 64U},
+                {X, 64U},  // c
+                {X, 64U},  // d
+                {O, 0U},
+            });
+
+    // DOUBLE FREE
+    dealloc(b,
+            {
+                {X, 64U},  // a
+                {O, 64U},
+                {X, 64U},  // c
+                {X, 64U},  // d
+                {O, 0U},
+            });
+
+    // BAD POINTERS
+    dealloc(reinterpret_cast<void*>(reinterpret_cast<std::uint8_t*>(a) + 1U),
+            {
+                {X, 64U},  // a
+                {O, 64U},
+                {X, 64U},  // c
+                {X, 64U},  // d
+                {O, 0U},
+            });
+    dealloc(reinterpret_cast<void*>(reinterpret_cast<std::uint8_t*>(b) + 8U),
+            {
+                {X, 64U},  // a
+                {O, 64U},
+                {X, 64U},  // c
+                {X, 64U},  // d
+                {O, 0U},
+            });
+    dealloc(reinterpret_cast<void*>(reinterpret_cast<std::uint8_t*>(d) - 1U),
+            {
+                {X, 64U},  // a
+                {O, 64U},
+                {X, 64U},  // c
+                {X, 64U},  // d
+                {O, 0U},
+            });
+
+    // RANDOM DATA INSIDE HEAP
+    for (std::uint32_t i = 0; i < 1000U; i++)
+    {
+        const auto ptr = reinterpret_cast<std::byte*>(c);
+        std::generate_n(ptr, 32U, getRandomByte);
+        dealloc(ptr + 16U,
+                {
+                    {X, 64U},  // a
+                    {O, 64U},
+                    {X, 64U},  // c
+                    {X, 64U},  // d
+                    {O, 0U},
+                });
+    }
+
+    // Deallocate C correctly. Heap is still working.
+    dealloc(c,
+            {
+                {X, 64U},  // a
+                {O, 128U},
+                {X, 64U},  // d
+                {O, 0U},
+            });
+
+    // RANDOM DATA OUTSIDE HEAP
+    {
+        std::array<std::byte, 100U> storage{};
+        for (std::uint32_t i = 0; i < 1000U; i++)
+        {
+            std::generate_n(storage.data(), std::size(storage), getRandomByte);
+            dealloc(storage.data(),
+                    {
+                        {X, 64U},  // a
+                        {O, 128U},
+                        {X, 64U},  // d
+                        {O, 0U},
+                    });
+        }
+    }
+
+    // RANDOM POINTERS
+    {
+        std::random_device                         rd;
+        std::mt19937                               gen(rd());
+        std::uniform_int_distribution<std::size_t> dis;
+        for (std::uint32_t i = 0; i < 1000U; i++)
+        {
+            dealloc(reinterpret_cast<void*>(dis(gen)),
+                    {
+                        {X, 64U},  // a
+                        {O, 128U},
+                        {X, 64U},  // d
+                        {O, 0U},
+                    });
+        }
+    }
+
+    // Deallocate A and D correctly. Heap is still working.
+    dealloc(a,
+            {
+                {O, 192U},
+                {X, 64U},  // d
+                {O, 0U},
+            });
+    dealloc(d,
+            {
+                {O, 0U},  // Empty heap.
+            });
+}
 #endif
