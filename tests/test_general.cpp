@@ -95,7 +95,7 @@ auto init(void* const       base,
     using internal::Fragment;
 
     // Fill the beginning of the arena with random bytes (the entire arena may be too slow to fill).
-    std::generate_n(reinterpret_cast<std::byte*>(base), std::min<std::size_t>(10'000U, size), getRandomByte);
+    std::generate_n(reinterpret_cast<std::byte*>(base), std::min<std::size_t>(1 * MiB, size), getRandomByte);
 
     const auto heap = reinterpret_cast<internal::O1HeapInstance*>(
         o1heapInit(base, size, critical_section_enter, critical_section_leave));
@@ -730,7 +730,8 @@ TEST_CASE("General: random A")
 
     constexpr auto               ArenaSize = MiB * 300U;
     std::shared_ptr<std::byte[]> arena(new std::byte[ArenaSize]);  // NOLINT avoid-c-arrays
-    auto                         heap = init(arena.get(), ArenaSize, cs::enter, cs::leave);
+    std::generate_n(arena.get(), ArenaSize, getRandomByte);        // Random-fill the ENTIRE arena!
+    auto heap = init(arena.get(), ArenaSize, cs::enter, cs::leave);
     REQUIRE(heap != nullptr);
 
     std::vector<void*> pointers;
@@ -746,7 +747,7 @@ TEST_CASE("General: random A")
     const auto allocate = [&]() {
         std::uniform_int_distribution<std::size_t> dis(0, ArenaSize / 1000U);
 
-        const std::size_t amount = dis(random_generator) + 1U;
+        const std::size_t amount = dis(random_generator);
         const auto        ptr    = heap->allocate(amount);
         if (ptr != nullptr)
         {
