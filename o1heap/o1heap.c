@@ -157,54 +157,10 @@ O1HEAP_PRIVATE size_t pow2(const uint8_t power)
 O1HEAP_PRIVATE void invoke(const O1HeapHook hook);
 O1HEAP_PRIVATE void invoke(const O1HeapHook hook)
 {
-    if (O1HEAP_LIKELY(hook != NULL))
+    if (hook != NULL)
     {
         hook();
     }
-}
-
-/// Returns true if the pointer is inside the fragment header pointer range and is aligned at O1HEAP_ALIGNMENT.
-O1HEAP_PRIVATE bool checkFragmentPointer(const O1HeapInstance* const handle, const void* const pointer);
-O1HEAP_PRIVATE bool checkFragmentPointer(const O1HeapInstance* const handle, const void* const pointer)
-{
-    O1HEAP_ASSERT(handle != NULL);
-    O1HEAP_ASSERT(handle->diagnostics.capacity >= FRAGMENT_SIZE_MIN);
-    O1HEAP_ASSERT(handle->diagnostics.capacity <= FRAGMENT_SIZE_MAX);
-    const size_t bottom  = ((size_t) handle) + INSTANCE_SIZE_PADDED;
-    const size_t top     = bottom + (handle->diagnostics.capacity - FRAGMENT_SIZE_MIN);
-    const size_t address = (pointer != NULL) ? ((size_t) pointer) : SIZE_MAX;
-    return ((address % O1HEAP_ALIGNMENT) == 0U) && (address >= bottom) && (address <= top);
-}
-
-O1HEAP_PRIVATE bool audit(const O1HeapInstance* const handle, const void* const pointer);
-O1HEAP_PRIVATE bool audit(const O1HeapInstance* const handle, const void* const pointer)
-{
-    O1HEAP_ASSERT(handle != NULL);
-    O1HEAP_ASSERT(handle->diagnostics.capacity <= FRAGMENT_SIZE_MAX);
-    bool valid = false;
-    if (O1HEAP_LIKELY(pointer != NULL))
-    {
-        const uint8_t* const fragment_pointer = ((const uint8_t*) pointer) - O1HEAP_ALIGNMENT;  // Underflow possible.
-        if (O1HEAP_LIKELY(checkFragmentPointer(handle, fragment_pointer)))
-        {
-            const Fragment* const fr = (const Fragment*) (const void*) fragment_pointer;
-            O1HEAP_ASSERT((((size_t) fr) % sizeof(Fragment*)) == 0U);  // Alignment is checked above.
-            valid = fr->header.used && (fr->header.size <= handle->diagnostics.capacity) &&
-                    (fr->header.size >= FRAGMENT_SIZE_MIN) && ((fr->header.size % FRAGMENT_SIZE_MIN) == 0U) &&
-                    // Check fragment interlinking.
-                    // This is a rather reliable test in the sense that the probability of a false-negative is very low.
-                    // However, it is expensive because it is likely to produce a cache miss if the fragments are large.
-                    ((fr->header.next == NULL) ||
-                     (checkFragmentPointer(handle, fr->header.next) && (fr->header.next->header.prev == fr))) &&
-                    ((fr->header.prev == NULL) ||
-                     (checkFragmentPointer(handle, fr->header.prev) && (fr->header.prev->header.next == fr)));
-        }
-    }
-    else
-    {
-        valid = true;  // A NULL pointer is considered valid.
-    }
-    return valid;
 }
 
 /// Links two fragments so that their next/prev pointers point to each other; left goes before right.
@@ -281,64 +237,49 @@ O1HeapInstance* o1heapInit(void* const      base,
                            const O1HeapHook critical_section_enter,
                            const O1HeapHook critical_section_leave)
 {
-    // Align the arena pointer.
-    uint8_t* adjusted_base = (uint8_t*) base;
-    size_t   adjusted_size = size;
-    while (((((size_t) adjusted_base) % O1HEAP_ALIGNMENT) != 0U) && (adjusted_size > 0U) && (adjusted_base != NULL))
-    {
-        adjusted_base++;
-        O1HEAP_ASSERT(adjusted_size > 0U);
-        adjusted_size--;
-    }
-
     O1HeapInstance* out = NULL;
-    if ((adjusted_base != NULL) && (adjusted_size >= (INSTANCE_SIZE_PADDED + FRAGMENT_SIZE_MIN)))
+    if ((base != NULL) && ((((size_t) base) % O1HEAP_ALIGNMENT) == 0U) &&
+        (size >= (INSTANCE_SIZE_PADDED + FRAGMENT_SIZE_MIN)))
     {
-        // Allocate the heap metadata structure in the beginning of the arena.
-        O1HEAP_ASSERT(((size_t) adjusted_base) % sizeof(O1HeapInstance*) == 0U);
-        out = (O1HeapInstance*) (void*) adjusted_base;
-        adjusted_base += INSTANCE_SIZE_PADDED;
-        adjusted_size -= INSTANCE_SIZE_PADDED;
-        O1HEAP_ASSERT((((size_t) adjusted_base) % O1HEAP_ALIGNMENT) == 0U);
+        // Allocate the core heap metadata structure in the beginning of the arena.
+        O1HEAP_ASSERT(((size_t) base) % sizeof(O1HeapInstance*) == 0U);
+        out                         = (O1HeapInstance*) base;
         out->nonempty_bin_mask      = 0U;
         out->critical_section_enter = critical_section_enter;
         out->critical_section_leave = critical_section_leave;
-
-        // Align the size; i.e., truncate the end. The base pointer is aligned already.
-        if (adjusted_size > FRAGMENT_SIZE_MAX)
-        {
-            adjusted_size = FRAGMENT_SIZE_MAX;
-        }
-        while ((adjusted_size % FRAGMENT_SIZE_MIN) != 0)
-        {
-            O1HEAP_ASSERT(adjusted_size > 0U);
-            adjusted_size--;
-        }
-
-        O1HEAP_ASSERT((adjusted_size % FRAGMENT_SIZE_MIN) == 0);
-        O1HEAP_ASSERT(adjusted_size >= FRAGMENT_SIZE_MIN);
-        O1HEAP_ASSERT(adjusted_size <= FRAGMENT_SIZE_MAX);
         for (size_t i = 0; i < NUM_BINS_MAX; i++)
         {
             out->bins[i] = NULL;
         }
 
-        // Initialize the root fragment.
-        O1HEAP_ASSERT((((size_t) adjusted_base) % O1HEAP_ALIGNMENT) == 0U);
-        O1HEAP_ASSERT((((size_t) adjusted_base) % sizeof(Fragment*)) == 0U);
-        Fragment* const frag = (Fragment*) (void*) adjusted_base;
-        frag->header.next    = NULL;
-        frag->header.prev    = NULL;
-        frag->header.size    = adjusted_size;
-        frag->header.used    = false;
-        frag->next_free      = NULL;
-        frag->prev_free      = NULL;
-        rebin(out, frag);
+        // Limit and align the capacity.
+        size_t capacity = size - INSTANCE_SIZE_PADDED;
+        if (capacity > FRAGMENT_SIZE_MAX)
+        {
+            capacity = FRAGMENT_SIZE_MAX;
+        }
+        while ((capacity % FRAGMENT_SIZE_MIN) != 0)
+        {
+            O1HEAP_ASSERT(capacity > 0U);
+            capacity--;
+        }
+        O1HEAP_ASSERT((capacity % FRAGMENT_SIZE_MIN) == 0);
+        O1HEAP_ASSERT((capacity >= FRAGMENT_SIZE_MIN) && (capacity <= FRAGMENT_SIZE_MAX));
 
+        // Initialize the root fragment.
+        Fragment* const frag = (Fragment*) (void*) (((uint8_t*) base) + INSTANCE_SIZE_PADDED);
+        O1HEAP_ASSERT((((size_t) frag) % O1HEAP_ALIGNMENT) == 0U);
+        frag->header.next = NULL;
+        frag->header.prev = NULL;
+        frag->header.size = capacity;
+        frag->header.used = false;
+        frag->next_free   = NULL;
+        frag->prev_free   = NULL;
+        rebin(out, frag);
         O1HEAP_ASSERT(out->nonempty_bin_mask != 0U);
 
         // Initialize the diagnostics.
-        out->diagnostics.capacity          = adjusted_size;
+        out->diagnostics.capacity          = capacity;
         out->diagnostics.allocated         = 0U;
         out->diagnostics.peak_allocated    = 0U;
         out->diagnostics.peak_request_size = 0U;
@@ -447,12 +388,22 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
 void o1heapFree(O1HeapInstance* const handle, void* const pointer)
 {
     O1HEAP_ASSERT(handle != NULL);
-    const bool pointer_is_valid = audit(handle, pointer);
-    O1HEAP_ASSERT(pointer_is_valid);
-    if (O1HEAP_LIKELY(pointer_is_valid && (pointer != NULL)))  // NULL pointer is a no-op.
+    O1HEAP_ASSERT(handle->diagnostics.capacity <= FRAGMENT_SIZE_MAX);
+    if (O1HEAP_LIKELY(pointer != NULL))  // NULL pointer is a no-op.
     {
         Fragment* const frag = (Fragment*) (void*) (((uint8_t*) pointer) - O1HEAP_ALIGNMENT);
+
+        // Check for heap corruption in debug builds.
         O1HEAP_ASSERT(((size_t) frag) % sizeof(Fragment*) == 0U);
+        O1HEAP_ASSERT(((size_t) frag) >= (((size_t) handle) + INSTANCE_SIZE_PADDED));
+        O1HEAP_ASSERT(((size_t) frag) <=
+                      (((size_t) handle) + INSTANCE_SIZE_PADDED + handle->diagnostics.capacity - FRAGMENT_SIZE_MIN));
+        O1HEAP_ASSERT(frag->header.used);  // Catch double-free
+        O1HEAP_ASSERT(((size_t) frag->header.next) % sizeof(Fragment*) == 0U);
+        O1HEAP_ASSERT(((size_t) frag->header.prev) % sizeof(Fragment*) == 0U);
+        O1HEAP_ASSERT(frag->header.size >= FRAGMENT_SIZE_MIN);
+        O1HEAP_ASSERT(frag->header.size <= handle->diagnostics.capacity);
+        O1HEAP_ASSERT((frag->header.size % O1HEAP_ALIGNMENT) == 0U);
 
         invoke(handle->critical_section_enter);
 

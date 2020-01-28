@@ -109,9 +109,6 @@ auto init(void* const       base,
 
         heap->validateInvariants();
 
-        // std::cout << "arena_size=" << size << "; "
-        //           << "capacity=" << heap->diagnostics.capacity << "; "
-        //           << "nonempty_bin_mask=" << heap->nonempty_bin_mask << std::endl;
         REQUIRE(heap->nonempty_bin_mask > 0U);
         REQUIRE((heap->nonempty_bin_mask & (heap->nonempty_bin_mask - 1U)) == 0);
         for (auto i = 0U; i < std::size(heap->bins); i++)
@@ -178,11 +175,7 @@ TEST_CASE("General: init")
                              size - offset,
                              (offset % 2U == 0U) ? &cs::enter : nullptr,
                              (offset % 4U == 0U) ? &cs::leave : nullptr);
-            if (heap == nullptr)
-            {
-                REQUIRE(size <= sizeof(internal::O1HeapInstance) * 2U + Fragment::SizeMin * 2U);
-            }
-            else
+            if (heap != nullptr)
             {
                 REQUIRE(size >= sizeof(internal::O1HeapInstance) + Fragment::SizeMin);
                 REQUIRE(reinterpret_cast<std::size_t>(heap) >= reinterpret_cast<std::size_t>(arena.data()));
@@ -199,9 +192,9 @@ TEST_CASE("General: allocate: OOM")
 {
     cs::resetCounters();
 
-    constexpr auto               MiB256    = MiB * 256U;
-    constexpr auto               ArenaSize = MiB256 + MiB;
-    std::shared_ptr<std::byte[]> arena(new std::byte[ArenaSize]);  // NOLINT avoid-c-arrays
+    constexpr auto             MiB256    = MiB * 256U;
+    constexpr auto             ArenaSize = MiB256 + MiB;
+    std::shared_ptr<std::byte> arena(static_cast<std::byte*>(std::aligned_alloc(64U, ArenaSize)));
 
     auto heap = init(arena.get(), ArenaSize, &cs::enter, &cs::leave);
     REQUIRE(heap != nullptr);
@@ -245,8 +238,8 @@ TEST_CASE("General: allocate: smallest")
 
     cs::resetCounters();
 
-    constexpr auto               ArenaSize = MiB * 300U;
-    std::shared_ptr<std::byte[]> arena(new std::byte[ArenaSize]);  // NOLINT avoid-c-arrays
+    constexpr auto             ArenaSize = MiB * 300U;
+    std::shared_ptr<std::byte> arena(static_cast<std::byte*>(std::aligned_alloc(64U, ArenaSize)));
 
     auto heap = init(arena.get(), ArenaSize, &cs::enter, &cs::leave);
     REQUIRE(heap != nullptr);
@@ -279,8 +272,8 @@ TEST_CASE("General: allocate: size_t overflow")
 
     cs::resetCounters();
 
-    constexpr auto               ArenaSize = MiB * 300U;
-    std::shared_ptr<std::byte[]> arena(new std::byte[ArenaSize]);  // NOLINT avoid-c-arrays
+    constexpr auto             ArenaSize = MiB * 300U;
+    std::shared_ptr<std::byte> arena(static_cast<std::byte*>(std::aligned_alloc(64U, ArenaSize)));
 
     auto heap = init(arena.get(), ArenaSize);
     REQUIRE(heap != nullptr);
@@ -543,194 +536,15 @@ TEST_CASE("General: free")
     REQUIRE(heap->diagnostics.oom_count == 0U);
 }
 
-#ifdef NDEBUG
-TEST_CASE("General: free: heap corruption protection")
-{
-    using internal::Fragment;
-
-    assert(false);  // Make sure assertion checks are disabled.
-
-    constexpr auto               ArenaSize = MiB * 300U;
-    std::shared_ptr<std::byte[]> arena(new std::byte[ArenaSize]);  // NOLINT avoid-c-arrays
-    auto                         heap = init(arena.get(), ArenaSize);
-    REQUIRE(heap != nullptr);
-
-    const auto alloc = [&](const std::size_t amount, const std::vector<std::pair<bool, std::size_t>>& reference) {
-        const auto p = heap->allocate(amount);
-        if (p != nullptr)
-        {
-            // Overwrite all to ensure that the allocator does not make implicit assumptions about the memory use.
-            std::generate_n(reinterpret_cast<std::byte*>(p), amount, getRandomByte);
-        }
-        heap->matchFragments(reference);
-        return p;
-    };
-
-    const auto dealloc = [&](void* const p, const std::vector<std::pair<bool, std::size_t>>& reference) {
-        INFO(heap->visualize());
-        heap->free(p);
-        heap->matchFragments(reference);
-    };
-
-    constexpr auto X = true;   // used
-    constexpr auto O = false;  // free
-
-    auto a = alloc(32U,
-                   {
-                       {X, 64},
-                       {O, 0},
-                   });
-    auto b = alloc(32U,
-                   {
-                       {X, 64},
-                       {X, 64},
-                       {O, 0},
-                   });
-    auto c = alloc(32U,
-                   {
-                       {X, 64},
-                       {X, 64},
-                       {X, 64},
-                       {O, 0},
-                   });
-    auto d = alloc(32U,
-                   {
-                       {X, 64},
-                       {X, 64},
-                       {X, 64},
-                       {X, 64},
-                       {O, 0},
-                   });
-
-    CAPTURE(a, d, c, d);
-
-    dealloc(b,
-            {
-                {X, 64},  // a
-                {O, 64},
-                {X, 64},  // c
-                {X, 64},  // d
-                {O, 0},
-            });
-
-    // DOUBLE FREE
-    dealloc(b,
-            {
-                {X, 64},  // a
-                {O, 64},
-                {X, 64},  // c
-                {X, 64},  // d
-                {O, 0},
-            });
-
-    // BAD POINTERS
-    dealloc(reinterpret_cast<void*>(reinterpret_cast<std::uint8_t*>(a) + 1U),
-            {
-                {X, 64},  // a
-                {O, 64},
-                {X, 64},  // c
-                {X, 64},  // d
-                {O, 0},
-            });
-    dealloc(reinterpret_cast<void*>(reinterpret_cast<std::uint8_t*>(b) + 8U),
-            {
-                {X, 64},  // a
-                {O, 64},
-                {X, 64},  // c
-                {X, 64},  // d
-                {O, 0},
-            });
-    dealloc(reinterpret_cast<void*>(reinterpret_cast<std::uint8_t*>(d) - 1U),
-            {
-                {X, 64},  // a
-                {O, 64},
-                {X, 64},  // c
-                {X, 64},  // d
-                {O, 0},
-            });
-
-    // RANDOM DATA INSIDE HEAP
-    // Technically, this test may fail even if the library is behaving correctly if the random data happens to look
-    // like a valid fragment header. The probability of such bad luck is so low that we can ignore it.
-    for (std::uint32_t i = 0; i < 10'000U; i++)
-    {
-        const auto ptr = reinterpret_cast<std::byte*>(c);
-        std::generate_n(ptr, 32U, getRandomByte);
-        dealloc(ptr + 16U,
-                {
-                    {X, 64},  // a
-                    {O, 64},
-                    {X, 64},  // c
-                    {X, 64},  // d
-                    {O, 0},
-                });
-    }
-
-    // Deallocate C correctly. Heap is still working.
-    dealloc(c,
-            {
-                {X, 64},  // a
-                {O, 128},
-                {X, 64},  // d
-                {O, 0},
-            });
-
-    // RANDOM DATA OUTSIDE HEAP
-    {
-        std::array<std::byte, 100U> storage{};
-        for (std::uint32_t i = 0; i < 1000U; i++)
-        {
-            std::generate_n(storage.data(), std::size(storage), getRandomByte);
-            dealloc(storage.data(),
-                    {
-                        {X, 64},  // a
-                        {O, 128},
-                        {X, 64},  // d
-                        {O, 0},
-                    });
-        }
-    }
-
-    // RANDOM POINTERS
-    {
-        std::random_device                         rd;
-        std::mt19937                               gen(rd());
-        std::uniform_int_distribution<std::size_t> dis;
-        for (std::uint32_t i = 0; i < 1000U; i++)
-        {
-            dealloc(reinterpret_cast<void*>(dis(gen)),
-                    {
-                        {X, 64},  // a
-                        {O, 128},
-                        {X, 64},  // d
-                        {O, 0},
-                    });
-        }
-    }
-
-    // Deallocate A and D correctly. Heap is still working.
-    dealloc(a,
-            {
-                {O, 192},
-                {X, 64},  // d
-                {O, 0},
-            });
-    dealloc(d,
-            {
-                {O, 0},  // Empty heap.
-            });
-}
-#endif
-
 /// This test has been empirically tuned to expand its state space coverage.
 /// If any new behaviors need to be tested, please consider writing another test instead of changing this one.
 TEST_CASE("General: random A")
 {
     using internal::Fragment;
 
-    constexpr auto               ArenaSize = MiB * 300U;
-    std::shared_ptr<std::byte[]> arena(new std::byte[ArenaSize]);  // NOLINT avoid-c-arrays
-    std::generate_n(arena.get(), ArenaSize, getRandomByte);        // Random-fill the ENTIRE arena!
+    constexpr auto             ArenaSize = MiB * 300U;
+    std::shared_ptr<std::byte> arena(static_cast<std::byte*>(std::aligned_alloc(64U, ArenaSize)));
+    std::generate_n(arena.get(), ArenaSize, getRandomByte);  // Random-fill the ENTIRE arena!
     auto heap = init(arena.get(), ArenaSize, cs::enter, cs::leave);
     REQUIRE(heap != nullptr);
 

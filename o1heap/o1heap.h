@@ -74,8 +74,7 @@ typedef struct
     uint64_t oom_count;
 } O1HeapDiagnostics;
 
-/// The arena start pointer and/or its size may be implicitly adjusted to enforce correct alignment.
-/// To avoid this, use a large alignment.
+/// The arena base pointer shall be aligned at @ref O1HEAP_ALIGNMENT.
 ///
 /// The heap capacity cannot exceed approx. (SIZE_MAX/2); if the arena size allows for a larger heap,
 /// the excess will be silently truncated away. This is not a realistic use case because a typical
