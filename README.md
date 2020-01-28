@@ -99,25 +99,33 @@ For example, for GCC, Clang, and ARM Compiler, it expands into `__builtin_expect
 
 ## Development
 
-### Coding conventions
+### Dependencies
+
+The following tools should be available locally to engage in library development:
+
+- GCC v9 or newer.
+- Clang and Clang-Tools v9 or newer.
+- CMake v3.12 or newer.
+- An AMD64 machine.
+
+### Conventions
 
 The codebase shall follow the [Zubax C/C++ Coding Conventions](https://kb.zubax.com/x/84Ah).
-The compliance is enforced with the help of the scripts located under `scripts/`.
+Compliance is enforced through the following means:
+
+- Clang-Tidy -- invoked automatically while building the test suite.
+- Clang-Format -- invoked manually as `make format`; enforced in CI/CD automatically.
+- SonarCloud -- invoked by CI/CD automatically.
 
 ### Testing
 
 Please refer to the continuous integration configuration to see how to invoke the tests.
-Make sure there are at least a few GiB of free physical RAM available when running the tests.
-
-### Static analysis
-
-Find the respective scripts under `scripts/`.
 
 ### MISRA compliance
 
 MISRA compliance is enforced with the help of the following tools:
 
-- Clang-Tidy, invokable via the script under `scripts/`.
+- Clang-Tidy, invoked automatically during the normal build process.
 - SonarCloud, invoked as part of the continuous integration build.
 
 Every intentional deviation shall be documented and justified in-place using the following notation,

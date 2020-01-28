@@ -21,7 +21,7 @@ matrix:
             - linux-libc-dev:i386
       script:
         # ---------- DEBUG ----------
-        - CC=gcc-9 && CXX=g++-9 && cmake tests -DCMAKE_BUILD_TYPE=Debug
+        - CC=gcc-9 && CXX=g++-9 && cmake tests -DCMAKE_BUILD_TYPE=Debug -DNO_STATIC_ANALYSIS=1
         - build-wrapper-linux-x86-64 --out-dir sonar-dump make all  # The build wrapper comes from Sonar Cloud.
         - make test
         # TODO: COMBINE COVERAGE FROM ALL EXECUTABLES!
@@ -29,7 +29,7 @@ matrix:
         - gcov-9 o1heap/o1heap.c --object-file o1heap*gcda --object-file o1heap*gcno
 
         # ---------- RELEASE ----------
-        - CC=gcc-9 && CXX=g++-9 && cmake tests -DCMAKE_BUILD_TYPE=Release
+        - CC=gcc-9 && CXX=g++-9 && cmake tests -DCMAKE_BUILD_TYPE=Release -DNO_STATIC_ANALYSIS=1
         - make all && make test
 
         # ---------- ANALYSIS ----------
@@ -49,8 +49,10 @@ matrix:
             - libc6-dev-i386
             - libstdc++-7-dev:i386
       script:
+        # Set up the toolchain.
         - wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sudo ./llvm.sh 9
-        - clang++-9 -E -x c++ - -v < /dev/null    # Print the Clang configuration for troubleshooting purposes
+        - sudo apt install clang-tidy-9 clang-format-9
+        - clang++-9 -E -x c++ - -v < /dev/null    # Print the Clang configuration for troubleshooting purposes.
         # DEBUG
         - cmake -DCMAKE_C_COMPILER=clang-9 -DCMAKE_CXX_COMPILER=clang++-9 tests -DCMAKE_BUILD_TYPE=Debug
         - make VERBOSE=1 && make test
@@ -63,32 +65,8 @@ matrix:
         # MINSIZEREL
         - cmake -DCMAKE_C_COMPILER=clang-9 -DCMAKE_CXX_COMPILER=clang++-9 tests -DCMAKE_BUILD_TYPE=MinSizeRel
         - make VERBOSE=1 && make test
-
-    # -------------------- Static analysis --------------------
-    - language: cpp
-      addons:
-        apt:
-          sources:
-            - ubuntu-toolchain-r-test
-          packages:  # Install a newer GCC because https://stackoverflow.com/a/51512150/1007777.
-            - g++-9
-            - g++-9-multilib
-            - gcc-9-multilib
-            - linux-libc-dev:i386
-            - libc6-dev-i386
-            - libstdc++-7-dev:i386
-      script:
-        - sudo rm -rf /usr/local/clang*
-        - wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sudo ./llvm.sh 9
-        - sudo apt install clang-format-9 clang-tidy-9
-        - sudo ln -sf $(which clang-format-9) /usr/bin/clang-format
-        - sudo ln -sf $(which clang-tidy-9) /usr/bin/clang-tidy
-
-        # Static analysis.
-        - scripts/run_static_analysis.sh
-
-        # Code style enforcement.
-        - scripts/format.sh
+        # Format check
+        - make format VERBOSE=1
         - 'modified="$(git status --porcelain --untracked-files=no)"'
         - 'if [ -n "$modified" ]; then echo "Run scripts/format.sh to reformat the code."; exit 1; fi'
 
