@@ -16,7 +16,7 @@ Checks: >-
   -google-readability-todo,
   -readability-avoid-const-params-in-decls,
   -llvm-header-guard,
-WarningsAsErrors: true
+WarningsAsErrors: '*'
 HeaderFilterRegex: '.*'
 AnalyzeTemporaryDtors: false
 FormatStyle: file

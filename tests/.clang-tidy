@@ -23,7 +23,7 @@ Checks: >-
   -cppcoreguidelines-pro-bounds-pointer-arithmetic,
   -cppcoreguidelines-avoid-magic-numbers,
   -readability-magic-numbers,
-WarningsAsErrors: true
+WarningsAsErrors: '*'
 HeaderFilterRegex: 'internal.hpp'
 AnalyzeTemporaryDtors: false
 FormatStyle: file
