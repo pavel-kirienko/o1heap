@@ -1,4 +1,6 @@
 dist: xenial
+env:
+  - CTEST_OUTPUT_ON_FAILURE=1
 
 matrix:
   include:
@@ -18,7 +20,6 @@ matrix:
             - gcc-9-multilib
             - linux-libc-dev:i386
       script:
-
         # ---------- DEBUG ----------
         - CC=gcc-9 && CXX=g++-9 && cmake tests -DCMAKE_BUILD_TYPE=Debug
         - build-wrapper-linux-x86-64 --out-dir sonar-dump make all  # The build wrapper comes from Sonar Cloud.
