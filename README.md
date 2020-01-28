@@ -107,6 +107,7 @@ The following tools should be available locally to engage in library development
 - Clang and Clang-Tools v9 or newer.
 - CMake v3.12 or newer.
 - An AMD64 machine.
+- (optional) Valgrind.
 
 ### Conventions
 
@@ -125,8 +126,8 @@ Please refer to the continuous integration configuration to see how to invoke th
 
 MISRA compliance is enforced with the help of the following tools:
 
-- Clang-Tidy, invoked automatically during the normal build process.
-- SonarCloud, invoked as part of the continuous integration build.
+- Clang-Tidy -- invoked automatically during the normal build process.
+- SonarCloud -- invoked as part of the continuous integration build.
 
 Every intentional deviation shall be documented and justified in-place using the following notation,
 followed by the appropriate static analyser warning suppression statement:
@@ -138,6 +139,10 @@ followed by the appropriate static analyser warning suppression statement:
 ```
 
 The list of intentional deviations can be obtained by simply searching the codebase for the above comments.
+
+Do not suppress compliance warnings using the means provided by static analysis tools because such deviations
+are impossible to track at the source code level.
+An exception applies for the case of false-positive (invalid) warnings -- those should not be mentioned in the codebase.
 
 ## License
 

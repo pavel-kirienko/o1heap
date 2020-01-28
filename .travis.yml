@@ -30,7 +30,7 @@ matrix:
 
         # ---------- RELEASE ----------
         - CC=gcc-9 && CXX=g++-9 && cmake tests -DCMAKE_BUILD_TYPE=Release -DNO_STATIC_ANALYSIS=1
-        - make all && make test
+        - make all VERBOSE=1 && make test
 
         # ---------- ANALYSIS ----------
         - sonar-scanner
