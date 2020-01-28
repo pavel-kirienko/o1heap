@@ -211,6 +211,7 @@ struct O1HeapInstance final
     void matchFragments(const std::vector<std::pair<bool, std::size_t>>& reference) const
     {
         validateInvariants();
+        INFO(visualize());
         auto frag = getFirstFragment();
         for (auto item : reference)
         {

@@ -327,10 +327,8 @@ TEST_CASE("General: free")
 {
     using internal::Fragment;
 
-    constexpr auto               ArenaSize = MiB * 300U;
-    std::shared_ptr<std::byte[]> arena(new std::byte[ArenaSize]);  // NOLINT avoid-c-arrays
-
-    auto heap = init(arena.get(), ArenaSize, &cs::enter, &cs::leave);
+    alignas(128U) std::array<std::byte, 4096U + sizeof(internal::O1HeapInstance) + O1HEAP_ALIGNMENT - 1U> arena{};
+    auto heap = init(arena.data(), std::size(arena), &cs::enter, &cs::leave);
     REQUIRE(heap != nullptr);
 
     REQUIRE(nullptr == heap->allocate(0U));
@@ -408,137 +406,137 @@ TEST_CASE("General: free")
 
     auto a = alloc(32U,
                    {
-                       {X, 64U},
-                       {O, 0U},
+                       {X, 64},
+                       {O, 4032},
                    });
     auto b = alloc(32U,
                    {
-                       {X, 64U},
-                       {X, 64U},
-                       {O, 0U},
+                       {X, 64},
+                       {X, 64},
+                       {O, 3968},
                    });
     auto c = alloc(32U,
                    {
-                       {X, 64U},
-                       {X, 64U},
-                       {X, 64U},
-                       {O, 0U},
+                       {X, 64},
+                       {X, 64},
+                       {X, 64},
+                       {O, 3904},
                    });
     auto d = alloc(32U,
                    {
-                       {X, 64U},
-                       {X, 64U},
-                       {X, 64U},
-                       {X, 64U},
-                       {O, 0U},
+                       {X, 64},
+                       {X, 64},
+                       {X, 64},
+                       {X, 64},
+                       {O, 3840},
                    });
     auto e = alloc(1024U,
                    {
-                       {X, 64U},
-                       {X, 64U},
-                       {X, 64U},
-                       {X, 64U},
-                       {X, 2048U},
-                       {O, 0U},
+                       {X, 64},
+                       {X, 64},
+                       {X, 64},
+                       {X, 64},
+                       {X, 2048},
+                       {O, 1792},
                    });
     auto f = alloc(512U,
                    {
-                       {X, 64U},    // a
-                       {X, 64U},    // b
-                       {X, 64U},    // c
-                       {X, 64U},    // d
-                       {X, 2048U},  // e
-                       {X, 1024U},  // f
-                       {O, 0U},
+                       {X, 64},    // a
+                       {X, 64},    // b
+                       {X, 64},    // c
+                       {X, 64},    // d
+                       {X, 2048},  // e
+                       {X, 1024},  // f
+                       {O, 768},
                    });
     dealloc(b,
             {
-                {X, 64U},  // a
-                {O, 64U},
-                {X, 64U},    // c
-                {X, 64U},    // d
-                {X, 2048U},  // e
-                {X, 1024U},  // f
-                {O, 0U},
+                {X, 64},  // a
+                {O, 64},
+                {X, 64},    // c
+                {X, 64},    // d
+                {X, 2048},  // e
+                {X, 1024},  // f
+                {O, 768},
             });
     dealloc(a,
             {
-                {O, 128U},   // joined right
-                {X, 64U},    // c
-                {X, 64U},    // d
-                {X, 2048U},  // e
-                {X, 1024U},  // f
-                {O, 0U},
+                {O, 128},   // joined right
+                {X, 64},    // c
+                {X, 64},    // d
+                {X, 2048},  // e
+                {X, 1024},  // f
+                {O, 768},
             });
     dealloc(c,
             {
-                {O, 192U},   // joined left
-                {X, 64U},    // d
-                {X, 2048U},  // e
-                {X, 1024U},  // f
-                {O, 0U},
+                {O, 192},   // joined left
+                {X, 64},    // d
+                {X, 2048},  // e
+                {X, 1024},  // f
+                {O, 768},
             });
     dealloc(e,
             {
-                {O, 192U},
-                {X, 64U},  // d
-                {O, 2048U},
-                {X, 1024U},  // f
-                {O, 0U},
+                {O, 192},
+                {X, 64},  // d
+                {O, 2048},
+                {X, 1024},  // f
+                {O, 768},
             });
-    auto g = alloc(400U,
+    auto g = alloc(400U,  // The last block will be taken because it is a better fit.
                    {
-                       {O, 192U},
-                       {X, 64U},   // d
-                       {X, 512U},  // g
-                       {O, 1536U},
-                       {X, 1024U},  // f
-                       {O, 0U},
+                       {O, 192},
+                       {X, 64},  // d
+                       {O, 2048},
+                       {X, 1024},  // f
+                       {X, 512},   // g
+                       {O, 256},
                    });
     dealloc(f,
             {
-                {O, 192U},
-                {X, 64U},   // d
-                {X, 512U},  // g
-                {O, 0U},    // joined left & right
+                {O, 192},
+                {X, 64},    // d
+                {O, 3072},  // joined left
+                {X, 512},   // g
+                {O, 256},
             });
     dealloc(d,
             {
-                {O, 256U},
-                {X, 512U},  // g
-                {O, 0U},
+                {O, 3328},  // joined left & right
+                {X, 512},   // g
+                {O, 256},
             });
     auto h = alloc(200U,
                    {
-                       {X, 256U},  // h
-                       {X, 512U},  // g
-                       {O, 0U},
+                       {O, 3328},
+                       {X, 512},  // g
+                       {X, 256},  // h
                    });
     auto i = alloc(32U,
                    {
-                       {X, 256U},  // h
-                       {X, 512U},  // g
-                       {X, 64U},   // i
-                       {O, 0U},
+                       {X, 64},  // i
+                       {O, 3264},
+                       {X, 512},  // g
+                       {X, 256},  // h
                    });
     dealloc(g,
             {
-                {X, 256U},  // h
-                {O, 512U},
-                {X, 64U},  // i
-                {O, 0U},
+                {X, 64},  // i
+                {O, 3776},
+                {X, 256},  // h
             });
     dealloc(h,
             {
-                {O, 768U},
-                {X, 64U},  // i
-                {O, 0U},
+                {X, 64},  // i
+                {O, 4032},
             });
     dealloc(i,
             {
-                {O, 0U},  // All heap is free.
+                {O, 4096},  // All heap is free.
             });
 
+    REQUIRE(heap->diagnostics.capacity == 4096U);
     REQUIRE(heap->diagnostics.allocated == 0U);
     REQUIRE(heap->diagnostics.peak_allocated == 3328U);
     REQUIRE(heap->diagnostics.peak_request_size == 1024U);
@@ -579,76 +577,76 @@ TEST_CASE("General: free: heap corruption protection")
 
     auto a = alloc(32U,
                    {
-                       {X, 64U},
-                       {O, 0U},
+                       {X, 64},
+                       {O, 0},
                    });
     auto b = alloc(32U,
                    {
-                       {X, 64U},
-                       {X, 64U},
-                       {O, 0U},
+                       {X, 64},
+                       {X, 64},
+                       {O, 0},
                    });
     auto c = alloc(32U,
                    {
-                       {X, 64U},
-                       {X, 64U},
-                       {X, 64U},
-                       {O, 0U},
+                       {X, 64},
+                       {X, 64},
+                       {X, 64},
+                       {O, 0},
                    });
     auto d = alloc(32U,
                    {
-                       {X, 64U},
-                       {X, 64U},
-                       {X, 64U},
-                       {X, 64U},
-                       {O, 0U},
+                       {X, 64},
+                       {X, 64},
+                       {X, 64},
+                       {X, 64},
+                       {O, 0},
                    });
 
     CAPTURE(a, d, c, d);
 
     dealloc(b,
             {
-                {X, 64U},  // a
-                {O, 64U},
-                {X, 64U},  // c
-                {X, 64U},  // d
-                {O, 0U},
+                {X, 64},  // a
+                {O, 64},
+                {X, 64},  // c
+                {X, 64},  // d
+                {O, 0},
             });
 
     // DOUBLE FREE
     dealloc(b,
             {
-                {X, 64U},  // a
-                {O, 64U},
-                {X, 64U},  // c
-                {X, 64U},  // d
-                {O, 0U},
+                {X, 64},  // a
+                {O, 64},
+                {X, 64},  // c
+                {X, 64},  // d
+                {O, 0},
             });
 
     // BAD POINTERS
     dealloc(reinterpret_cast<void*>(reinterpret_cast<std::uint8_t*>(a) + 1U),
             {
-                {X, 64U},  // a
-                {O, 64U},
-                {X, 64U},  // c
-                {X, 64U},  // d
-                {O, 0U},
+                {X, 64},  // a
+                {O, 64},
+                {X, 64},  // c
+                {X, 64},  // d
+                {O, 0},
             });
     dealloc(reinterpret_cast<void*>(reinterpret_cast<std::uint8_t*>(b) + 8U),
             {
-                {X, 64U},  // a
-                {O, 64U},
-                {X, 64U},  // c
-                {X, 64U},  // d
-                {O, 0U},
+                {X, 64},  // a
+                {O, 64},
+                {X, 64},  // c
+                {X, 64},  // d
+                {O, 0},
             });
     dealloc(reinterpret_cast<void*>(reinterpret_cast<std::uint8_t*>(d) - 1U),
             {
-                {X, 64U},  // a
-                {O, 64U},
-                {X, 64U},  // c
-                {X, 64U},  // d
-                {O, 0U},
+                {X, 64},  // a
+                {O, 64},
+                {X, 64},  // c
+                {X, 64},  // d
+                {O, 0},
             });
 
     // RANDOM DATA INSIDE HEAP
@@ -658,21 +656,21 @@ TEST_CASE("General: free: heap corruption protection")
         std::generate_n(ptr, 32U, getRandomByte);
         dealloc(ptr + 16U,
                 {
-                    {X, 64U},  // a
-                    {O, 64U},
-                    {X, 64U},  // c
-                    {X, 64U},  // d
-                    {O, 0U},
+                    {X, 64},  // a
+                    {O, 64},
+                    {X, 64},  // c
+                    {X, 64},  // d
+                    {O, 0},
                 });
     }
 
     // Deallocate C correctly. Heap is still working.
     dealloc(c,
             {
-                {X, 64U},  // a
-                {O, 128U},
-                {X, 64U},  // d
-                {O, 0U},
+                {X, 64},  // a
+                {O, 128},
+                {X, 64},  // d
+                {O, 0},
             });
 
     // RANDOM DATA OUTSIDE HEAP
@@ -683,10 +681,10 @@ TEST_CASE("General: free: heap corruption protection")
             std::generate_n(storage.data(), std::size(storage), getRandomByte);
             dealloc(storage.data(),
                     {
-                        {X, 64U},  // a
-                        {O, 128U},
-                        {X, 64U},  // d
-                        {O, 0U},
+                        {X, 64},  // a
+                        {O, 128},
+                        {X, 64},  // d
+                        {O, 0},
                     });
         }
     }
@@ -700,10 +698,10 @@ TEST_CASE("General: free: heap corruption protection")
         {
             dealloc(reinterpret_cast<void*>(dis(gen)),
                     {
-                        {X, 64U},  // a
-                        {O, 128U},
-                        {X, 64U},  // d
-                        {O, 0U},
+                        {X, 64},  // a
+                        {O, 128},
+                        {X, 64},  // d
+                        {O, 0},
                     });
         }
     }
@@ -711,13 +709,13 @@ TEST_CASE("General: free: heap corruption protection")
     // Deallocate A and D correctly. Heap is still working.
     dealloc(a,
             {
-                {O, 192U},
-                {X, 64U},  // d
-                {O, 0U},
+                {O, 192},
+                {X, 64},  // d
+                {O, 0},
             });
     dealloc(d,
             {
-                {O, 0U},  // Empty heap.
+                {O, 0},  // Empty heap.
             });
 }
 #endif
