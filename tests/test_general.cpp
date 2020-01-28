@@ -650,7 +650,9 @@ TEST_CASE("General: free: heap corruption protection")
             });
 
     // RANDOM DATA INSIDE HEAP
-    for (std::uint32_t i = 0; i < 1000U; i++)
+    // Technically, this test may fail even if the library is behaving correctly if the random data happens to look
+    // like a valid fragment header. The probability of such bad luck is so low that we can ignore it.
+    for (std::uint32_t i = 0; i < 10'000U; i++)
     {
         const auto ptr = reinterpret_cast<std::byte*>(c);
         std::generate_n(ptr, 32U, getRandomByte);

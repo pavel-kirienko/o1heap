@@ -120,15 +120,15 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount);
 
 /// The semantics follows free() with additional guarantees the full list of which is provided below.
 ///
-/// In general, if the pointer does not point to a previously allocated block, the behavior is undefined.
-/// The library contains a set of reasonably reliable yet non-intrusive heuristics that are intended to
-/// detect whether the supplied pointer is valid. If the pointer is proven to be invalid,
+/// In general, if the pointer does not point to a previously allocated block and is not NULL,
+/// the behavior is undefined. The library has a set of reasonably reliable non-intrusive heuristics
+/// that may detect if the supplied pointer is invalid. If the pointer is proven to be invalid,
 /// an assertion failure is triggered (unless disabled) and no further actions are performed
 /// (i.e., if assertion checks are disabled, passing an invalid pointer is likely to result in a silent no-op).
 /// Said invalid pointer detection heuristics are not perfect: a false-negative is possible, in which case
 /// a heap corruption may occur. The heuristics are guaranteed to never yield a false-positive (i.e., a valid
-/// pointer cannot be rejected). It is expected that the heuristics are sufficiently robust to detect a
-/// vast majority of such errors.
+/// pointer cannot be rejected). It is expected that the heuristics are sufficiently robust to detect the
+/// majority of such errors.
 ///
 /// The freed memory will be automatically merged with adjacent free fragments, if any.
 ///

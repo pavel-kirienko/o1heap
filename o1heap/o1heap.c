@@ -163,44 +163,46 @@ O1HEAP_PRIVATE void invoke(const O1HeapHook hook)
     }
 }
 
+/// Returns true if the pointer is inside the fragment header pointer range and is aligned at O1HEAP_ALIGNMENT.
+O1HEAP_PRIVATE bool checkFragmentPointer(const O1HeapInstance* const handle, const void* const pointer);
+O1HEAP_PRIVATE bool checkFragmentPointer(const O1HeapInstance* const handle, const void* const pointer)
+{
+    O1HEAP_ASSERT(handle != NULL);
+    O1HEAP_ASSERT(handle->diagnostics.capacity >= FRAGMENT_SIZE_MIN);
+    O1HEAP_ASSERT(handle->diagnostics.capacity <= FRAGMENT_SIZE_MAX);
+    const size_t bottom  = ((size_t) handle) + INSTANCE_SIZE_PADDED;
+    const size_t top     = bottom + (handle->diagnostics.capacity - FRAGMENT_SIZE_MIN);
+    const size_t address = (pointer != NULL) ? ((size_t) pointer) : SIZE_MAX;
+    return ((address % O1HEAP_ALIGNMENT) == 0U) && (address >= bottom) && (address <= top);
+}
+
 O1HEAP_PRIVATE bool audit(const O1HeapInstance* const handle, const void* const pointer);
 O1HEAP_PRIVATE bool audit(const O1HeapInstance* const handle, const void* const pointer)
 {
     O1HEAP_ASSERT(handle != NULL);
     O1HEAP_ASSERT(handle->diagnostics.capacity <= FRAGMENT_SIZE_MAX);
     bool valid = false;
-
     if (O1HEAP_LIKELY(pointer != NULL))
     {
-        // The range is NOT precise -- a mere approximation will suffice.
-        const size_t heap_range_bottom = ((size_t) handle) + sizeof(O1HeapInstance);
-        const size_t heap_range_top    = heap_range_bottom + handle->diagnostics.capacity;
-        const size_t fragment_address  = ((size_t) pointer) - O1HEAP_ALIGNMENT;
-
-        const bool pointer_is_valid = ((fragment_address % O1HEAP_ALIGNMENT) == 0U) &&
-                                      (fragment_address >= heap_range_bottom) && (fragment_address <= heap_range_top);
-        if (O1HEAP_LIKELY(pointer_is_valid))
+        const uint8_t* const fragment_pointer = ((const uint8_t*) pointer) - O1HEAP_ALIGNMENT;  // Underflow possible.
+        if (O1HEAP_LIKELY(checkFragmentPointer(handle, fragment_pointer)))
         {
-            const Fragment* const frag =
-                (const Fragment*) (const void*) (((const uint8_t*) pointer) - O1HEAP_ALIGNMENT);
-            O1HEAP_ASSERT((((size_t) frag) % sizeof(Fragment*)) == 0U);  // Alignment is checked above.
-
-            const bool frag_is_valid =
-                frag->header.used && (frag->header.size <= handle->diagnostics.capacity) &&
-                (frag->header.size >= FRAGMENT_SIZE_MIN) && ((frag->header.size % FRAGMENT_SIZE_MIN) == 0U) &&
-                // The linked list pointers are aligned correctly.
-                ((((size_t) frag->header.next) % sizeof(Fragment*)) == 0U) &&
-                ((((size_t) frag->header.prev) % sizeof(Fragment*)) == 0U) &&
-                // The linked list is internally consistent -- the siblings are interlinked properly.
-                ((frag->header.next == NULL) || (frag->header.next->header.prev == frag)) &&
-                ((frag->header.prev == NULL) || (frag->header.prev->header.next == frag));
-
-            valid = frag_is_valid;
+            const Fragment* const fr = (const Fragment*) (const void*) fragment_pointer;
+            O1HEAP_ASSERT((((size_t) fr) % sizeof(Fragment*)) == 0U);  // Alignment is checked above.
+            valid = fr->header.used && (fr->header.size <= handle->diagnostics.capacity) &&
+                    (fr->header.size >= FRAGMENT_SIZE_MIN) && ((fr->header.size % FRAGMENT_SIZE_MIN) == 0U) &&
+                    // Check fragment interlinking.
+                    // This is a rather reliable test in the sense that the probability of a false-negative is very low.
+                    // However, it is expensive because it is likely to produce a cache miss if the fragments are large.
+                    ((fr->header.next == NULL) ||
+                     (checkFragmentPointer(handle, fr->header.next) && (fr->header.next->header.prev == fr))) &&
+                    ((fr->header.prev == NULL) ||
+                     (checkFragmentPointer(handle, fr->header.prev) && (fr->header.prev->header.next == fr)));
         }
     }
-    else  // A NULL pointer is unconditionally valid.
+    else
     {
-        valid = true;
+        valid = true;  // A NULL pointer is considered valid.
     }
     return valid;
 }
