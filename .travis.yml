@@ -20,7 +20,7 @@ matrix:
             - gcc-9-multilib
             - linux-libc-dev:i386
       script:
-        # ---------- DEBUG ----------
+        # DEBUG
         - CC=gcc-9 && CXX=g++-9 && cmake tests -DCMAKE_BUILD_TYPE=Debug -DNO_STATIC_ANALYSIS=1
         - build-wrapper-linux-x86-64 --out-dir sonar-dump make all  # The build wrapper comes from Sonar Cloud.
         - make test
@@ -28,11 +28,11 @@ matrix:
         - find CMakeFiles/test_general_cov.dir/ -name 'o1heap.c.*' -type f -print -exec mv -f {} . \;
         - gcov-9 o1heap/o1heap.c --object-file o1heap*gcda --object-file o1heap*gcno
 
-        # ---------- RELEASE ----------
+        # RELEASE
         - CC=gcc-9 && CXX=g++-9 && cmake tests -DCMAKE_BUILD_TYPE=Release -DNO_STATIC_ANALYSIS=1
         - make all VERBOSE=1 && make test
 
-        # ---------- ANALYSIS ----------
+        # ANALYSIS
         - sonar-scanner
 
     # -------------------- Clang 9 --------------------
@@ -53,18 +53,23 @@ matrix:
         - wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sudo ./llvm.sh 9
         - sudo apt install clang-tidy-9 clang-format-9
         - clang++-9 -E -x c++ - -v < /dev/null    # Print the Clang configuration for troubleshooting purposes.
+
         # DEBUG
         - cmake -DCMAKE_C_COMPILER=clang-9 -DCMAKE_CXX_COMPILER=clang++-9 tests -DCMAKE_BUILD_TYPE=Debug
         - make VERBOSE=1 && make test
+
         # RELEASE
         - cmake -DCMAKE_C_COMPILER=clang-9 -DCMAKE_CXX_COMPILER=clang++-9 tests -DCMAKE_BUILD_TYPE=Release
         - make VERBOSE=1 && make test
+
         # RELWITHDEBINFO
         - cmake -DCMAKE_C_COMPILER=clang-9 -DCMAKE_CXX_COMPILER=clang++-9 tests -DCMAKE_BUILD_TYPE=RelWithDebInfo
         - make VERBOSE=1 && make test
+
         # MINSIZEREL
         - cmake -DCMAKE_C_COMPILER=clang-9 -DCMAKE_CXX_COMPILER=clang++-9 tests -DCMAKE_BUILD_TYPE=MinSizeRel
         - make VERBOSE=1 && make test
+
         # Format check
         - make format VERBOSE=1
         - 'modified="$(git status --porcelain --untracked-files=no)"'
