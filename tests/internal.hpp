@@ -85,7 +85,7 @@ struct Fragment final
         throw std::logic_error("Invalid fragment size");
     }
 
-    void validateInvariants() const
+    void validate() const
     {
         const auto address = reinterpret_cast<std::size_t>(this);
         REQUIRE((address % sizeof(void*)) == 0U);
@@ -154,28 +154,33 @@ struct O1HeapInstance final
 
     [[nodiscard]] auto allocate(const size_t amount)
     {
-        validateInvariants();  // Can't use RAII because it may throw -- can't throw from destructor.
+        validate();  // Can't use RAII because it may throw -- can't throw from destructor.
         const auto out = o1heapAllocate(reinterpret_cast<::O1HeapInstance*>(this), amount);
         if (out != nullptr)
         {
-            Fragment::constructFromAllocatedMemory(out).validateInvariants();
+            Fragment::constructFromAllocatedMemory(out).validate();
         }
-        validateInvariants();
+        validate();
         return out;
     }
 
     auto free(void* const pointer)
     {
-        validateInvariants();
+        validate();
         o1heapFree(reinterpret_cast<::O1HeapInstance*>(this), pointer);
-        validateInvariants();
+        validate();
+    }
+
+    [[nodiscard]] auto doInvariantsHold() const
+    {
+        return o1heapDoInvariantsHold(reinterpret_cast<const ::O1HeapInstance*>(this));
     }
 
     [[nodiscard]] auto getDiagnostics() const
     {
-        validateInvariants();
+        validate();
         const auto out = o1heapGetDiagnostics(reinterpret_cast<const ::O1HeapInstance*>(this));
-        validateInvariants();
+        validate();
         REQUIRE(std::memcmp(&diagnostics, &out, sizeof(diagnostics)) == 0);
         return out;
     }
@@ -198,7 +203,7 @@ struct O1HeapInstance final
         return frag;
     }
 
-    void validateInvariants() const
+    void validate() const
     {
         validateCore();
         validateFragmentChain();
@@ -210,7 +215,7 @@ struct O1HeapInstance final
     /// If the size is zero, it will be ignored (i.e., any value will match).
     void matchFragments(const std::vector<std::pair<bool, std::size_t>>& reference) const
     {
-        validateInvariants();
+        validate();
         INFO(visualize());
         auto frag = getFirstFragment();
         for (auto item : reference)
@@ -278,6 +283,8 @@ private:
         REQUIRE((diagnostics.peak_allocated % Fragment::SizeMin) == 0U);
 
         REQUIRE(((diagnostics.peak_request_size <= diagnostics.capacity) || (diagnostics.oom_count > 0U)));
+        REQUIRE((((diagnostics.peak_request_size + O1HEAP_ALIGNMENT) <= diagnostics.peak_allocated) ||
+                 (diagnostics.peak_request_size == 0U) || (diagnostics.oom_count > 0U)));
     }
 
     void validateFragmentChain() const
@@ -299,7 +306,7 @@ private:
         auto frag = getFirstFragment();
         do
         {
-            frag->validateInvariants();
+            frag->validate();
             REQUIRE(frag->header.size <= diagnostics.capacity);
 
             // Update and check the totals early.
@@ -381,6 +388,8 @@ private:
         REQUIRE((diagnostics.capacity - diagnostics.allocated) == total_free);
     }
 };
+
+static_assert(O1HEAP_VERSION_MAJOR == 1);
 
 }  // namespace internal
 

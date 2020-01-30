@@ -167,11 +167,11 @@ O1HEAP_PRIVATE void invoke(const O1HeapHook hook)
 O1HEAP_PRIVATE void interlink(Fragment* const left, Fragment* const right);
 O1HEAP_PRIVATE void interlink(Fragment* const left, Fragment* const right)
 {
-    if (left != NULL)
+    if (O1HEAP_LIKELY(left != NULL))
     {
         left->header.next = right;
     }
-    if (right != NULL)
+    if (O1HEAP_LIKELY(right != NULL))
     {
         right->header.prev = left;
     }
@@ -301,9 +301,7 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
     if (O1HEAP_LIKELY((amount > 0U) && (amount <= (handle->diagnostics.capacity - O1HEAP_ALIGNMENT))))
     {
         // Add the header size and align the allocation size to the power of 2.
-        // See "Timing-Predictable Memory Allocation In Hard Real-Time Systems", Joerg Herter, page 27:
-        // alignment to the power of 2 guarantees that the worst case external fragmentation is bounded.
-        // This comes at the expense of higher memory utilization but it is acceptable.
+        // See "Timing-Predictable Memory Allocation In Hard Real-Time Systems", Herter, page 27.
         const size_t fragment_size = pow2(log2Ceil(amount + O1HEAP_ALIGNMENT));
         O1HEAP_ASSERT(fragment_size <= FRAGMENT_SIZE_MAX);
         O1HEAP_ASSERT(fragment_size >= FRAGMENT_SIZE_MIN);
@@ -354,7 +352,7 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
             O1HEAP_ASSERT((handle->diagnostics.allocated % FRAGMENT_SIZE_MIN) == 0U);
             handle->diagnostics.allocated += fragment_size;
             O1HEAP_ASSERT(handle->diagnostics.allocated <= handle->diagnostics.capacity);
-            if (handle->diagnostics.peak_allocated < handle->diagnostics.allocated)
+            if (O1HEAP_LIKELY(handle->diagnostics.peak_allocated < handle->diagnostics.allocated))
             {
                 handle->diagnostics.peak_allocated = handle->diagnostics.allocated;
             }
@@ -372,11 +370,11 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
     }
 
     // Update the diagnostics.
-    if (handle->diagnostics.peak_request_size < amount)
+    if (O1HEAP_LIKELY(handle->diagnostics.peak_request_size < amount))
     {
         handle->diagnostics.peak_request_size = amount;
     }
-    if ((out == NULL) && (amount > 0U))
+    if (O1HEAP_LIKELY((out == NULL) && (amount > 0U)))
     {
         handle->diagnostics.oom_count++;
     }
@@ -403,7 +401,7 @@ void o1heapFree(O1HeapInstance* const handle, void* const pointer)
         O1HEAP_ASSERT(((size_t) frag->header.prev) % sizeof(Fragment*) == 0U);
         O1HEAP_ASSERT(frag->header.size >= FRAGMENT_SIZE_MIN);
         O1HEAP_ASSERT(frag->header.size <= handle->diagnostics.capacity);
-        O1HEAP_ASSERT((frag->header.size % O1HEAP_ALIGNMENT) == 0U);
+        O1HEAP_ASSERT((frag->header.size % FRAGMENT_SIZE_MIN) == 0U);
 
         invoke(handle->critical_section_enter);
 
@@ -464,4 +462,48 @@ O1HeapDiagnostics o1heapGetDiagnostics(const O1HeapInstance* const handle)
     const O1HeapDiagnostics out = handle->diagnostics;
     invoke(handle->critical_section_leave);
     return out;
+}
+
+bool o1heapDoInvariantsHold(const O1HeapInstance* const handle)
+{
+    O1HEAP_ASSERT(handle != NULL);
+    bool valid = true;
+
+    invoke(handle->critical_section_enter);
+
+    // Check the bin mask consistency.
+    for (size_t i = 0; i < NUM_BINS_MAX; i++)  // Dear compiler, feel free to unroll this loop.
+    {
+        const bool mask_bit_set = (handle->nonempty_bin_mask & pow2((uint8_t) i)) != 0U;
+        const bool bin_nonempty = handle->bins[i] != NULL;
+        valid                   = valid && (mask_bit_set == bin_nonempty);
+    }
+
+    // Create a local copy of the diagnostics struct to check later and release the critical section early.
+    const O1HeapDiagnostics diag = handle->diagnostics;
+
+    invoke(handle->critical_section_leave);
+
+    // Capacity check.
+    valid = valid && (diag.capacity <= FRAGMENT_SIZE_MAX) && (diag.capacity >= FRAGMENT_SIZE_MIN) &&
+            ((diag.capacity % FRAGMENT_SIZE_MIN) == 0U);
+
+    // Allocation info check.
+    valid = valid && (diag.allocated <= diag.capacity) && ((diag.allocated % FRAGMENT_SIZE_MIN) == 0U) &&
+            (diag.peak_allocated <= diag.capacity) && (diag.peak_allocated >= diag.allocated) &&
+            ((diag.peak_allocated % FRAGMENT_SIZE_MIN) == 0U);
+
+    // Peak request check
+    valid = valid && ((diag.peak_request_size < diag.capacity) || (diag.oom_count > 0U));
+    if (diag.peak_request_size == 0U)
+    {
+        valid = valid && (diag.peak_allocated == 0U) && (diag.allocated == 0U) && (diag.oom_count == 0U);
+    }
+    else
+    {
+        valid = valid &&  // Overflow on summation is possible but safe to ignore.
+                (((diag.peak_request_size + O1HEAP_ALIGNMENT) <= diag.peak_allocated) || (diag.oom_count > 0U));
+    }
+
+    return valid;
 }

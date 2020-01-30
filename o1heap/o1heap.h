@@ -27,11 +27,8 @@
 extern "C" {
 #endif
 
-/// The definition is private, so the user code can only operate on pointers. This is done to enforce encapsulation.
-typedef struct O1HeapInstance O1HeapInstance;
-
-/// A hook function invoked by the allocator. NULL hooks are silently not invoked.
-typedef void (*O1HeapHook)(void);
+/// The semantic version number of this distribution.
+#define O1HEAP_VERSION_MAJOR 1
 
 /// The guaranteed alignment depends on the platform and is characterized as follows (the list may not be exhaustive):
 ///
@@ -44,11 +41,17 @@ typedef void (*O1HeapHook)(void);
 ///
 #define O1HEAP_ALIGNMENT (sizeof(void*) * 4U)
 
+/// The definition is private, so the user code can only operate on pointers. This is done to enforce encapsulation.
+typedef struct O1HeapInstance O1HeapInstance;
+
+/// A hook function invoked by the allocator. NULL hooks are silently not invoked.
+typedef void (*O1HeapHook)(void);
+
 /// Runtime diagnostic information. This information can be used to facilitate runtime self-testing,
 /// as required by certain safety-critical development guidelines.
 /// If assertion checks are not disabled, the library will perform automatic runtime self-diagnostics that trigger
 /// an assertion failure if a heap corruption is detected.
-/// TODO: INVARIANT CHECKER!
+/// Health checks and validation can be done with @ref o1heapDoInvariantsHold().
 typedef struct
 {
     /// The total amount of memory available for serving the allocation requests.
@@ -119,17 +122,8 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount);
 
 /// The semantics follows free() with additional guarantees the full list of which is provided below.
 ///
-/// In general, if the pointer does not point to a previously allocated block and is not NULL,
-/// the behavior is undefined. The library has a set of reasonably reliable non-intrusive heuristics
-/// that may detect if the supplied pointer is invalid. If the pointer is proven to be invalid,
-/// an assertion failure is triggered (unless disabled) and no further actions are performed
-/// (i.e., if assertion checks are disabled, passing an invalid pointer is likely to result in a silent no-op).
-/// Said invalid pointer detection heuristics are not perfect: a false-negative is possible, in which case
-/// a heap corruption may occur. The heuristics are guaranteed to never yield a false-positive (i.e., a valid
-/// pointer cannot be rejected). It is expected that the heuristics are sufficiently robust to detect the
-/// majority of such errors.
-///
-/// The freed memory will be automatically merged with adjacent free fragments, if any.
+/// If the pointer does not point to a previously allocated block and is not NULL, the behavior is undefined.
+/// Builds where assertion checks are enabled may trigger an assertion failure for some invalid inputs.
 ///
 /// The function is executed in constant time (unless the critical section management hooks are not constant-time).
 ///
@@ -137,6 +131,14 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount);
 /// It is guaranteed that critical_section_enter is invoked before critical_section_leave.
 /// It is guaranteed that critical_section_enter is invoked the same number of times as critical_section_leave.
 void o1heapFree(O1HeapInstance* const handle, void* const pointer);
+
+/// Performs a basic sanity check on the heap.
+/// This function can be used as a weak but fast method of heap corruption detection.
+/// It invokes critical_section_enter once (unless NULL) and then critical_section_leave once (unless NULL).
+/// If the handle pointer is NULL, the behavior is undefined.
+/// The time complexity is constant.
+/// The return value is truth if the heap looks valid, falsity otherwise.
+bool o1heapDoInvariantsHold(const O1HeapInstance* const handle);
 
 /// Returns the diagnostic information, see @ref O1HeapDiagnostics.
 /// This function merely copies the structure from an internal storage, so it is fast to return.

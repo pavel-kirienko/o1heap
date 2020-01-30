@@ -72,7 +72,7 @@ Where *M* is the peak total memory requirement of the application
 and *n* is the maximum contiguous allocation that can be requested by the application.
 
 Note that the provided equation is a generalized case that does not explicitly take into account
-a possible per-fragment metadata allocation overhead, which is assumed to be included in *M,n*.
+a possible per-fragment metadata allocation overhead -- it is assumed to be included in *M,n*.
 
 The state of *catastrophic fragmentation* is a state where the allocator is unable to serve
 a memory allocation request even if there is enough free memory due to its suboptimal arrangement.
@@ -154,7 +154,8 @@ Allocate and deallocate memory using `o1heapAllocate(..)` and `o1heapDeallocate(
 Their semantics are compatible with `malloc(..)` and `free(..)` plus additional behavioral guarantees
 (constant timing, bounded fragmentation, protections against double-free and heap corruption in `free(..)`).
 
-`o1heapPredictWorstCaseMemoryConsumption(..)`
+If necessary, periodically invoke `o1heapDoInvariantsHold(..)` to ensure that the heap is functioning correctly
+and its internal data structures are not damaged.
 
 ### Build configuration options
 

@@ -107,7 +107,7 @@ auto init(void* const       base,
         REQUIRE(heap->critical_section_enter == critical_section_enter);
         REQUIRE(heap->critical_section_leave == critical_section_leave);
 
-        heap->validateInvariants();
+        heap->validate();
 
         REQUIRE(heap->nonempty_bin_mask > 0U);
         REQUIRE((heap->nonempty_bin_mask & (heap->nonempty_bin_mask - 1U)) == 0);
@@ -171,33 +171,34 @@ TEST_CASE("General: init")
         for (auto size = 99U; size < 5100U; size += 111U)
         {
             REQUIRE(arena.size() >= size);
+            cs::resetCounters();
             auto heap = init(arena.data() + offset,
                              size - offset,
                              (offset % 2U == 0U) ? &cs::enter : nullptr,
                              (offset % 4U == 0U) ? &cs::leave : nullptr);
+            REQUIRE(cs::g_cnt_enter == 0);
+            REQUIRE(cs::g_cnt_leave == 0);
             if (heap != nullptr)
             {
                 REQUIRE(size >= sizeof(internal::O1HeapInstance) + Fragment::SizeMin);
                 REQUIRE(reinterpret_cast<std::size_t>(heap) >= reinterpret_cast<std::size_t>(arena.data()));
                 REQUIRE(reinterpret_cast<std::size_t>(heap) % O1HEAP_ALIGNMENT == 0U);
+
+                REQUIRE(heap->doInvariantsHold());
             }
         }
     }
-
-    REQUIRE(cs::g_cnt_enter == 0);
-    REQUIRE(cs::g_cnt_leave == 0);
 }
 
 TEST_CASE("General: allocate: OOM")
 {
-    cs::resetCounters();
-
     constexpr auto             MiB256    = MiB * 256U;
     constexpr auto             ArenaSize = MiB256 + MiB;
     std::shared_ptr<std::byte> arena(static_cast<std::byte*>(std::aligned_alloc(64U, ArenaSize)));
 
     auto heap = init(arena.get(), ArenaSize, &cs::enter, &cs::leave);
     REQUIRE(heap != nullptr);
+    cs::resetCounters();
     REQUIRE(heap->getDiagnostics().capacity > ArenaSize - 1024U);
     REQUIRE(heap->getDiagnostics().capacity < ArenaSize);
     REQUIRE(heap->getDiagnostics().oom_count == 0);
@@ -230,19 +231,20 @@ TEST_CASE("General: allocate: OOM")
     REQUIRE(heap->getDiagnostics().peak_allocated == MiB256);
     REQUIRE(heap->getDiagnostics().allocated == MiB256);
     REQUIRE(heap->getDiagnostics().peak_request_size == ArenaSize * 10U);  // Same size -- that one was unsuccessful.
+
+    REQUIRE(heap->doInvariantsHold());
 }
 
 TEST_CASE("General: allocate: smallest")
 {
     using internal::Fragment;
 
-    cs::resetCounters();
-
     constexpr auto             ArenaSize = MiB * 300U;
     std::shared_ptr<std::byte> arena(static_cast<std::byte*>(std::aligned_alloc(64U, ArenaSize)));
 
     auto heap = init(arena.get(), ArenaSize, &cs::enter, &cs::leave);
     REQUIRE(heap != nullptr);
+    cs::resetCounters();
 
     void* const mem = heap->allocate(1U);
     REQUIRE(((cs::g_cnt_enter == 1) && (cs::g_cnt_leave == 1)));
@@ -262,6 +264,7 @@ TEST_CASE("General: allocate: smallest")
     REQUIRE(!frag.header.next->header.used);
 
     heap->free(mem);
+    REQUIRE(heap->doInvariantsHold());
 }
 
 TEST_CASE("General: allocate: size_t overflow")
@@ -270,12 +273,11 @@ TEST_CASE("General: allocate: size_t overflow")
 
     constexpr auto size_max = std::numeric_limits<std::size_t>::max();
 
-    cs::resetCounters();
-
     constexpr auto             ArenaSize = MiB * 300U;
     std::shared_ptr<std::byte> arena(static_cast<std::byte*>(std::aligned_alloc(64U, ArenaSize)));
 
     auto heap = init(arena.get(), ArenaSize);
+    cs::resetCounters();
     REQUIRE(heap != nullptr);
     REQUIRE(heap->diagnostics.capacity > (ArenaSize - 1024U));
     REQUIRE(heap->diagnostics.capacity < ArenaSize);
@@ -314,6 +316,8 @@ TEST_CASE("General: allocate: size_t overflow")
 
     REQUIRE(heap->nonempty_bin_mask == 0);
     REQUIRE(std::all_of(std::begin(heap->bins), std::end(heap->bins), [](auto* p) { return p == nullptr; }));
+
+    REQUIRE(heap->doInvariantsHold());
 }
 
 TEST_CASE("General: free")
@@ -366,6 +370,8 @@ TEST_CASE("General: free")
         REQUIRE(heap->diagnostics.peak_request_size == peak_request_size);
         cs::validateAndReset(1);
         heap->matchFragments(reference);
+        REQUIRE(heap->doInvariantsHold());
+        cs::validateAndReset(1);
         return p;
     };
 
@@ -392,6 +398,8 @@ TEST_CASE("General: free")
         REQUIRE(heap->diagnostics.peak_allocated == peak_allocated);
         REQUIRE(heap->diagnostics.peak_request_size == peak_request_size);
         heap->matchFragments(reference);
+        REQUIRE(heap->doInvariantsHold());
+        cs::validateAndReset(1);
     };
 
     constexpr auto X = true;   // used
@@ -534,6 +542,7 @@ TEST_CASE("General: free")
     REQUIRE(heap->diagnostics.peak_allocated == 3328U);
     REQUIRE(heap->diagnostics.peak_request_size == 1024U);
     REQUIRE(heap->diagnostics.oom_count == 0U);
+    REQUIRE(heap->doInvariantsHold());
 }
 
 /// This test has been empirically tuned to expand its state space coverage.
@@ -559,6 +568,7 @@ TEST_CASE("General: random A")
     std::mt19937       random_generator(random_device());
 
     const auto allocate = [&]() {
+        REQUIRE(heap->doInvariantsHold());
         std::uniform_int_distribution<std::size_t> dis(0, ArenaSize / 1000U);
 
         const std::size_t amount = dis(random_generator);
@@ -580,9 +590,11 @@ TEST_CASE("General: random A")
             }
         }
         peak_request_size = std::max(peak_request_size, amount);
+        REQUIRE(heap->doInvariantsHold());
     };
 
     const auto deallocate = [&]() {
+        REQUIRE(heap->doInvariantsHold());
         if (!pointers.empty())
         {
             std::uniform_int_distribution<decltype(pointers)::difference_type>
@@ -593,12 +605,13 @@ TEST_CASE("General: random A")
             if (ptr != nullptr)
             {
                 const auto& frag = Fragment::constructFromAllocatedMemory(ptr);
-                frag.validateInvariants();
+                frag.validate();
                 REQUIRE(allocated >= frag.header.size);
                 allocated -= frag.header.size;
             }
             heap->free(ptr);
         }
+        REQUIRE(heap->doInvariantsHold());
     };
 
     // The memory use is growing slowly from zero.
@@ -617,7 +630,50 @@ TEST_CASE("General: random A")
         REQUIRE(heap->diagnostics.peak_allocated == peak_allocated);
         REQUIRE(heap->diagnostics.peak_request_size == peak_request_size);
         REQUIRE(heap->diagnostics.oom_count == oom_count);
+        REQUIRE(heap->doInvariantsHold());
 
         std::cout << heap->visualize() << std::endl;
     }
+}
+
+TEST_CASE("General: invariant checker")
+{
+    using internal::Fragment;
+
+    alignas(128U) std::array<std::byte, 4096U + sizeof(internal::O1HeapInstance) + O1HEAP_ALIGNMENT - 1U> arena{};
+    auto heap = init(arena.data(), std::size(arena), &cs::enter, &cs::leave);
+    REQUIRE(heap != nullptr);
+    REQUIRE(heap->doInvariantsHold());
+    auto& dg = heap->diagnostics;
+
+    dg.capacity++;
+    REQUIRE(!heap->doInvariantsHold());
+    dg.capacity--;
+    REQUIRE(heap->doInvariantsHold());
+
+    dg.allocated += Fragment::SizeMin;
+    REQUIRE(!heap->doInvariantsHold());
+    dg.peak_allocated += Fragment::SizeMin;
+    REQUIRE(!heap->doInvariantsHold());
+    dg.peak_request_size += 1;
+    REQUIRE(heap->doInvariantsHold());
+    dg.peak_allocated--;
+    REQUIRE(!heap->doInvariantsHold());
+    dg.peak_allocated++;
+    dg.allocated -= Fragment::SizeMin;
+    REQUIRE(heap->doInvariantsHold());
+    dg.allocated++;
+    REQUIRE(!heap->doInvariantsHold());
+    dg.allocated--;
+    REQUIRE(heap->doInvariantsHold());
+
+    dg.peak_allocated = dg.capacity + 1U;
+    REQUIRE(!heap->doInvariantsHold());
+    dg.peak_allocated = dg.capacity;
+    REQUIRE(heap->doInvariantsHold());
+
+    dg.peak_request_size = dg.capacity;
+    REQUIRE(!heap->doInvariantsHold());
+    dg.oom_count++;
+    REQUIRE(heap->doInvariantsHold());
 }
