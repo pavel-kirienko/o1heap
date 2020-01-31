@@ -11,7 +11,7 @@
 // OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
-// Copyright (c) 2020 UAVCAN Development Team
+// Copyright (c) 2020 Pavel Kirienko
 // Authors: Pavel Kirienko <pavel.kirienko@zubax.com>
 
 #include "o1heap.h"
@@ -27,7 +27,7 @@
 #endif
 
 /// Branch probability annotations are used to improve the worst case execution time (WCET). They are entirely optional.
-/// A stock implementation is provided for GCC/Clang; for other compilers it defaults to nothing.
+/// A stock implementation is provided for some well-known compilers; for other compilers it defaults to nothing.
 /// If you are using a different compiler, consider overriding this value.
 #ifndef O1HEAP_LIKELY
 #    if defined(__GNUC__) || defined(__clang__) || defined(__CC_ARM)
@@ -70,7 +70,6 @@
 
 /// Normally we should subtract log2(FRAGMENT_SIZE_MIN) but log2 is bulky to compute using the preprocessor only.
 /// We will certainly end up with unused bins this way, but it is cheap to ignore.
-/// Providing fewer bins than may be needed is dangerous because it may lead to runtime out-of-bounds access.
 #define NUM_BINS_MAX (sizeof(size_t) * 8U)
 
 static_assert((O1HEAP_ALIGNMENT & (O1HEAP_ALIGNMENT - 1U)) == 0U, "Not a power of 2");
@@ -147,7 +146,7 @@ O1HEAP_PRIVATE uint8_t log2Ceil(const size_t x)
 
 /// Raise 2 into the specified power.
 /// You might be tempted to do something like (1U << power). WRONG! We humans are prone to forgetting things.
-/// If you forget to cast your 1U to size_t or ULL, you WILL end up with UNDEFINED BEHAVIOR on 64-bit platforms.
+/// If you forget to cast your 1U to size_t or ULL, you may end up with undefined behavior.
 O1HEAP_PRIVATE size_t pow2(const uint8_t power);
 O1HEAP_PRIVATE size_t pow2(const uint8_t power)
 {

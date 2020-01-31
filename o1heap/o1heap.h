@@ -11,7 +11,7 @@
 // OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
-// Copyright (c) 2020 UAVCAN Development Team
+// Copyright (c) 2020 Pavel Kirienko
 // Authors: Pavel Kirienko <pavel.kirienko@zubax.com>
 //
 // READ THE DOCUMENTATION IN README.md.
@@ -36,7 +36,7 @@ extern "C" {
 /// The definition is private, so the user code can only operate on pointers. This is done to enforce encapsulation.
 typedef struct O1HeapInstance O1HeapInstance;
 
-/// A hook function invoked by the allocator. NULL hooks are silently not invoked.
+/// A hook function invoked by the allocator. NULL hooks are silently not invoked (not an error).
 typedef void (*O1HeapHook)(void);
 
 /// Runtime diagnostic information. This information can be used to facilitate runtime self-testing,
@@ -46,17 +46,17 @@ typedef void (*O1HeapHook)(void);
 /// Health checks and validation can be done with @ref o1heapDoInvariantsHold().
 typedef struct
 {
-    /// The total amount of memory available for serving the allocation requests.
+    /// The total amount of memory available for serving allocation requests (heap size).
     /// The maximum allocation size is (capacity - O1HEAP_ALIGNMENT).
     /// This parameter does not include the overhead used up by @ref O1HeapInstance and arena alignment.
     /// This parameter is constant.
     size_t capacity;
 
     /// The amount of memory that is currently allocated, including the per-fragment overhead and size alignment.
-    /// For example, if the application requested a fragment of size 1 byte, the value reported here may be 64 bytes.
+    /// For example, if the application requested a fragment of size 1 byte, the value reported here may be 32 bytes.
     size_t allocated;
 
-    /// The maximum value of allocated_bytes seen since initialization. This parameter is never decreased.
+    /// The maximum value of 'allocated' seen since initialization. This parameter is never decreased.
     size_t peak_allocated;
 
     /// The largest amount of memory that the allocator has attempted to allocate (perhaps unsuccessfully)
@@ -69,10 +69,10 @@ typedef struct
     uint64_t oom_count;
 } O1HeapDiagnostics;
 
-/// The arena base pointer shall be aligned at @ref O1HEAP_ALIGNMENT.
+/// The arena base pointer shall be aligned at @ref O1HEAP_ALIGNMENT, otherwise NULL is returned.
 ///
-/// The heap capacity cannot exceed approx. (SIZE_MAX/2); if the arena size allows for a larger heap,
-/// the excess will be silently truncated away. This is not a realistic use case because a typical
+/// The total heap capacity cannot exceed approx. (SIZE_MAX/2). If the arena size allows for a larger heap,
+/// the excess will be silently truncated away (no error). This is not a realistic use case because a typical
 /// application is unlikely to be able to dedicate that much of the address space for the heap.
 ///
 /// The critical section enter/leave callbacks will be invoked when the allocator performs an atomic transaction.
@@ -85,8 +85,7 @@ typedef struct
 /// own needs (normally about 40..600 bytes depending on the architecture, but this parameter is not characterized).
 /// A pointer to the newly initialized instance is returned.
 ///
-/// If the provided space is insufficient, or became insufficient after the pointer and size have been aligned,
-/// NULL is returned.
+/// If the provided space is insufficient, NULL is returned.
 ///
 /// An initialized instance does not hold any resources. Therefore, if the instance is no longer needed,
 /// it can be discarded without any de-initialization procedures.
@@ -105,10 +104,10 @@ O1HeapInstance* o1heapInit(void* const      base,
 /// If the allocation request cannot be served due to the lack of memory or its excessive fragmentation,
 /// a NULL pointer is returned.
 ///
-/// The function is executed in constant time (unless the critical section management hooks are not constant-time).
-/// The allocated memory is NOT zero-filled because zero-filling is a variable-complexity operation.
+/// The function is executed in constant time (unless the critical section management hooks are used and are not
+/// constant-time). The allocated memory is NOT zero-filled (because zero-filling is a variable-complexity operation).
 ///
-/// The function invokes critical_section_enter and critical_section_leave exactly once each.
+/// The function invokes critical_section_enter and critical_section_leave exactly once each (NULL hooks are ignored).
 /// It is guaranteed that critical_section_enter is invoked before critical_section_leave.
 void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount);
 
@@ -117,11 +116,13 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount);
 /// If the pointer does not point to a previously allocated block and is not NULL, the behavior is undefined.
 /// Builds where assertion checks are enabled may trigger an assertion failure for some invalid inputs.
 ///
-/// The function is executed in constant time (unless the critical section management hooks are not constant-time).
+/// The function is executed in constant time (unless the critical section management hooks are used and are not
+/// constant-time).
 ///
-/// The function may invoke critical_section_enter and critical_section_leave at most once each.
+/// The function may invoke critical_section_enter and critical_section_leave at most once each (NULL hooks ignored).
 /// It is guaranteed that critical_section_enter is invoked before critical_section_leave.
-/// It is guaranteed that critical_section_enter is invoked the same number of times as critical_section_leave.
+/// It is guaranteed that critical_section_enter is invoked the same number of times as critical_section_leave,
+/// unless either of them are NULL.
 void o1heapFree(O1HeapInstance* const handle, void* const pointer);
 
 /// Performs a basic sanity check on the heap.
@@ -132,7 +133,7 @@ void o1heapFree(O1HeapInstance* const handle, void* const pointer);
 /// The return value is truth if the heap looks valid, falsity otherwise.
 bool o1heapDoInvariantsHold(const O1HeapInstance* const handle);
 
-/// Returns the diagnostic information, see @ref O1HeapDiagnostics.
+/// Samples and returns a copy of the diagnostic information, see @ref O1HeapDiagnostics.
 /// This function merely copies the structure from an internal storage, so it is fast to return.
 /// It invokes critical_section_enter once (unless NULL) and then critical_section_leave once (unless NULL).
 /// If the handle pointer is NULL, the behavior is undefined.
