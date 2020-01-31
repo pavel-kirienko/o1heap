@@ -455,15 +455,6 @@ void o1heapFree(O1HeapInstance* const handle, void* const pointer)
     }
 }
 
-O1HeapDiagnostics o1heapGetDiagnostics(const O1HeapInstance* const handle)
-{
-    O1HEAP_ASSERT(handle != NULL);
-    invoke(handle->critical_section_enter);
-    const O1HeapDiagnostics out = handle->diagnostics;
-    invoke(handle->critical_section_leave);
-    return out;
-}
-
 bool o1heapDoInvariantsHold(const O1HeapInstance* const handle)
 {
     O1HEAP_ASSERT(handle != NULL);
@@ -506,4 +497,13 @@ bool o1heapDoInvariantsHold(const O1HeapInstance* const handle)
     }
 
     return valid;
+}
+
+O1HeapDiagnostics o1heapGetDiagnostics(const O1HeapInstance* const handle)
+{
+    O1HEAP_ASSERT(handle != NULL);
+    invoke(handle->critical_section_enter);
+    const O1HeapDiagnostics out = handle->diagnostics;
+    invoke(handle->critical_section_leave);
+    return out;
 }

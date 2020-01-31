@@ -4,20 +4,19 @@
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=pavel-kirienko_o1heap&metric=coverage)](https://sonarcloud.io/dashboard?id=pavel-kirienko_o1heap)
 [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=pavel-kirienko_o1heap&metric=reliability_rating)](https://sonarcloud.io/dashboard?id=pavel-kirienko_o1heap)
 
-## Description
-
-O1heap is a highly deterministic constant-complexity memory allocator designed for hard real-time embedded systems.
+O1heap is a highly deterministic constant-complexity memory allocator designed for
+hard real-time safety-critical embedded systems.
 The name stands for *O(1) heap*.
 
 The allocator offers
 a constant worst-case execution time (WCET) and
-a bounded worst-case memory fragmentation (consumption) (WCMC).
+a well-characterized worst-case memory fragmentation (consumption) (WCMC).
 The allocator allows the designer to statically prove its temporal and spatial properties for a given application,
 which makes it suitable for use in safety-critical systems.
 
 The codebase is implemented in C99/C11 following MISRA C:2012, with several intended deviations which are unavoidable
 due to the fact that a memory allocator has to rely on inherently unsafe operations to fulfill its purpose.
-The codebase is extremely compact (<500 SLoC) and is therefore trivial to validate manually.
+The codebase is extremely compact (<500 SLoC) and is therefore trivial to validate.
 
 The allocator is designed to be portable across all conventional architectures, from 8-bit to 64-bit systems.
 Multi-threaded environments are supported with the help of external synchronization hooks provided by the application.
@@ -28,10 +27,10 @@ Multi-threaded environments are supported with the help of external synchronizat
 
 The core objective of this library is to provide a dynamic memory allocator that meets the following requirements:
 
-- Memory allocation and deallocation routines are **constant time**.
+- Memory allocation and deallocation routines are constant-time.
 
-- For a given peak memory requirement *M*, the **worst-case memory consumption *H* is bounded** and low
-  (i.e., the worst-case heap fragmentation is predictable).
+- For a given peak memory requirement *M*, the worst-case memory consumption *H* is easily and robustly predictable
+  (i.e., the worst-case heap fragmentation is well-characterized).
   The application designer shall be able to easily predict the amount of memory that needs to be provided to the
   memory allocator to ensure that out-of-memory (OOM) failures provably cannot occur at runtime
   under any circumstances.
@@ -60,16 +59,15 @@ and/or by relying on more sophisticated algorithms, this implementation chooses 
 where no assumptions are made about the application and the codebase is kept simple to facilitate its integration
 into verified and validated safety-critical software.
 
-The library implements a modified Half-Fit --
-a constant-complexity (de-)allocation algorithm originally proposed by Ogasawara.
+The library implements a modified Half-Fit algorithm -- a constant-complexity strategy originally proposed by Ogasawara.
 In this implementation, memory is allocated in fragments whose size is rounded up to the next integer power of two.
 The worst-case memory consumption (WCMC) *H* of this allocation strategy has been shown to be:
 
 H(M,n) = 2 M (1 + ⌈log<sub>2</sub> n⌉)
 
 Where *M* is the peak total memory requirement of the application
-(i.e., sum of sizes of all allocated blocks when the heap memory utilization is at its peak)
-and *n* is the maximum contiguous allocation that can be requested by the application.
+(i.e., sum of sizes of all allocated fragments when the heap memory utilization is at its peak)
+and *n* is the maximum contiguous fragment that can be requested by the application.
 
 Note that the provided equation is a generalized case that does not explicitly take into account
 a possible per-fragment metadata allocation overhead.
@@ -81,14 +79,14 @@ catastrophic fragmentation cannot occur.
 
 Memory allocators used in general-purpose (non real-time) applications often leverage a different class of algorithms
 which may feature poorer worst-case performance metrics but perform (much) better on average.
-For a hard real-time system, the average case performance is generally less irrelevant,
+For a hard real-time system, the average case performance is generally less relevant,
 hence it can be excluded from analysis.
 
 The above-defined theoretical worst-case upper bound H may be prohibitively high for some
 memory-constrained applications.
 It has been shown [Robson 1975] that under a typical workload,
 for a sufficiently high amount of memory available to the allocator which is less than *H*,
-the probability of a (de-)allocation sequence that results in catastrophic fragmentation occurring is low.
+the probability of a (de-)allocation sequence that results in catastrophic fragmentation is low.
 When combined with an acceptable failure probability and a set of adequate assumptions about the behaviors of
 the application, this property may allow the designer to drastically reduce the amount of memory dedicated to
 the heap while ensuring a sufficient degree of predictability and reliability.
@@ -119,10 +117,10 @@ From the above follows that *F(r) ≥ 2 a*.
 Remember that *r>0* -- following the semantics of `malloc(..)`,
 the allocator returns a null pointer if a zero-sized allocation is requested.
 
-It has been mentioned above that the abstract definition of *H* does not take into account the
+It has been mentioned that the abstract definition of *H* does not take into account the
 implementation-specific overheads.
-Said overheads should be considered to obtain a practical upper bound memory use needed for the application at hand.
-In order to take the overheads into account, we define the following refined memory consumption model:
+Said overheads should be considered when calculating the amount memory needed for a specific application.
+We define a refined worst-case memory consumption (WCMC) model below.
 
 nf = ⌈n/l⌉
 
@@ -135,8 +133,8 @@ Where *l* -- the smallest amount of memory that may be requested by the applicat
 *Mf* -- the total amount of heap space that may be requested by the application in min-size fragments;
 *k* -- the maximum number of fragments.
 The worst case number of min-size memory fragments required is *Hf(Mf,nf) = H(Mf,nf)*.
-The total amount of space needed to accommodate the per-fragment overhead is *(k a)*.
-Then, the total worst-case memory consumption (WCMC), expressed in bytes, is:
+The total amount of space needed to accommodate the per-fragment overhead is *(k×a)*.
+Then, the total WCMC, expressed in bytes, is:
 
 Hb(M,n,l,a) = a k + (2 l n Mf (⌈log<sub>2</sub>nf⌉ + 1)) / (l+n)
 
@@ -169,9 +167,9 @@ In the case of concurrent environments, also pass pointers to the synchronizatio
 Alternatively, some applications (where possible) might benefit from using a separate heap per thread to avoid
 the synchronization overhead and reduce contention.
 
-Allocate and deallocate memory using `o1heapAllocate(..)` and `o1heapDeallocate(..)`.
+Allocate and deallocate memory using `o1heapAllocate(..)` and `o1heapFree(..)`.
 Their semantics are compatible with `malloc(..)` and `free(..)` plus additional behavioral guarantees
-(constant timing, bounded fragmentation, protections against double-free and heap corruption in `free(..)`).
+(constant timing, bounded fragmentation).
 
 If necessary, periodically invoke `o1heapDoInvariantsHold(..)` to ensure that the heap is functioning correctly
 and its internal data structures are not damaged.
@@ -200,13 +198,13 @@ If not specified, the macro expands as follows:
 
 - For some well-known compilers the macro automatically expands into appropriate branch weighting intrinsics.
 For example, for GCC, Clang, and ARM Compiler, it expands into `__builtin_expect((x), 1)`.
-- For other compilers it expands into the original expression with no modifications: `(x)`.
+- For other (unknown) compilers it expands into the original expression with no modifications: `(x)`.
 
 ## Development
 
 ### Dependencies
 
-The following tools should be available locally to engage in library development:
+The following tools should be available locally to conduct library development:
 
 - GCC v9 or newer.
 - Clang and Clang-Tools v9 or newer.
