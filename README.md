@@ -125,7 +125,9 @@ Said overheads should be considered to obtain a practical upper bound memory use
 In order to take the overheads into account, we define the following refined memory consumption model:
 
 nf = ⌈n/l⌉
+
 Mf = ⌈M/l⌉
+
 k = Mf - nf + 1
 
 Where *l* -- the smallest amount of memory that may be requested by the application;
@@ -136,7 +138,7 @@ The worst case number of min-size memory fragments required is *Hf(Mf,nf) = H(Mf
 The total amount of space needed to accommodate the per-fragment overhead is *(k a)*.
 Then, the total worst-case memory consumption (WCMC), expressed in bytes, is:
 
-Hb(M,n,l,a) = a (⌈M/l⌉-⌈n/l⌉+1) + (2 l n ⌈M/l⌉ (⌈log<sub>2</sub>⌈n/l⌉⌉ + 1)) / (l+n)
+Hb(M,n,l,a) = a k + (2 l n Mf (⌈log<sub>2</sub>nf⌉ + 1)) / (l+n)
 
 **The above equation should be used for sizing the heap space.**
 Observe that the case where *l=n* degenerates into the standard fixed-size block allocator.
