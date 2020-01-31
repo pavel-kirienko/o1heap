@@ -72,7 +72,7 @@ Where *M* is the peak total memory requirement of the application
 and *n* is the maximum contiguous allocation that can be requested by the application.
 
 Note that the provided equation is a generalized case that does not explicitly take into account
-a possible per-fragment metadata allocation overhead -- it is assumed to be included in *M,n*.
+a possible per-fragment metadata allocation overhead.
 
 The state of *catastrophic fragmentation* is a state where the allocator is unable to serve
 a memory allocation request even if there is enough free memory due to its suboptimal arrangement.
@@ -112,24 +112,41 @@ implicitly introduced by the allocator for memory management needs.
 The size of the overhead *a* is represented in the codebase as `O1HEAP_ALIGNMENT`,
 because it also dictates the allocated memory pointer alignment.
 Due to the overhead, the maximum amount of memory available to the application per allocation is F'(r) = F(r) - a.
+The amount of the overhead per allocation and, therefore, pointer alignment is 4×(pointer width);
+e.g., for a 32-bit platform, the overhead/alignment is 16 bytes (128 bits).
+
+From the above follows that *F(r) ≥ 2 a*.
+Remember that *r>0* -- following the semantics of `malloc(..)`,
+the allocator returns a null pointer if a zero-sized allocation is requested.
 
 It has been mentioned above that the abstract definition of *H* does not take into account the
 implementation-specific overheads.
-To account for the worst-case memory consumption *H'* where the overhead *a* is considered,
-we add the product of the overhead size and the maximum number of fragments for a given combination of *M,n* to *H*.
-The worst case (maximum) number of fragments is trivially defined as *M-n+1*,
-i.e., where each fragment but the largest (the *n*-sized one) is of the minimal size.
-The resulting WCMF bound is very large because under this model
-the application may allocate memory in byte-sized fragments, resulting in catastrophic memory over-utilization.
-Assuming that the smallest practical allocation is never lower than *a* and *M ≫ n ≫ a*,
-we obtain the following approximation:
+Said overheads should be considered to obtain a practical upper bound memory use needed for the application at hand.
+In order to take the overheads into account, we define the following refined memory consumption model:
 
-**H'(M,n) ≈ 3 M (1 + ⌈log<sub>2</sub> n⌉)**
+nf = ⌈n/l⌉
+Mf = ⌈M/l⌉
+k = Mf - nf + 1
+
+Where *l* -- the smallest amount of memory that may be requested by the application;
+*nf* -- the size of the largest allocation expressed through the number of min-size fragments;
+*Mf* -- the total amount of heap space that may be requested by the application in min-size fragments;
+*k* -- the maximum number of fragments.
+The worst case number of min-size memory fragments required is *Hf(Mf,nf) = H(Mf,nf)*.
+The total amount of space needed to accommodate the per-fragment overhead is *(k a)*.
+Then, the total worst-case memory consumption (WCMC), expressed in bytes, is:
+
+Hb(M,n,l,a) = a (⌈M/l⌉-⌈n/l⌉+1) + (2 l n ⌈M/l⌉ (⌈log<sub>2</sub>⌈n/l⌉⌉ + 1)) / (l+n)
 
 **The above equation should be used for sizing the heap space.**
-The following illustration shows *H'(M,n)* for some common memory sizes:
+Observe that the case where *l=n* degenerates into the standard fixed-size block allocator.
+Increase of *l* lowers the upper bound because larger fragments inherently reduce the fragmentation.
 
-![WCMC](docs/H_prime.png "Worst-case memory consumption with per-fragment overhead (H') as a function of max fragment size (n) and total memory need (M)")
+The following illustration shows the worst-case memory consumption (WCMC) for some common memory sizes;
+as explained above, *l* is chosen by the application designer freely,
+and *a* is the value of `O1HEAP_ALIGNMENT`:
+
+![WCMC](docs/H.png "Total worst-case memory consumption (H) as a function of max fragment size (n) and total memory need (M)")
 
 The allocation and deallocation routines are strictly linear and contain neither loops nor recursive calls.
 In order to further improve the real-time performance, manual branch hinting is used,
