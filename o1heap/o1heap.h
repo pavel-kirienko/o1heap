@@ -76,10 +76,12 @@ typedef struct
 /// application is unlikely to be able to dedicate that much of the address space for the heap.
 ///
 /// The critical section enter/leave callbacks will be invoked when the allocator performs an atomic transaction.
-/// There is exactly one atomic transaction per allocation/deallocation; i.e., each callback is invoked once for
-/// allocation and once for deallocation. It is guaranteed that a critical section will never be entered recursively.
+/// There is at most one atomic transaction per allocation/deallocation.
+/// Either or both of the callbacks may be NULL if locking is not needed (i.e., the heap is not shared).
+/// It is guaranteed that a critical section will never be entered recursively.
+/// It is guaranteed that 'enter' is invoked the same number of times as 'leave', unless either of them are NULL.
+/// It is guaranteed that 'enter' is invoked before 'leave', unless either of them are NULL.
 /// The callbacks are never invoked from the initialization function itself.
-/// Either or both of the callbacks may be NULL if such functionality is not needed.
 ///
 /// The function initializes a new heap instance allocated in the provided arena, taking some of its space for its
 /// own needs (normally about 40..600 bytes depending on the architecture, but this parameter is not characterized).
@@ -107,8 +109,7 @@ O1HeapInstance* o1heapInit(void* const      base,
 /// The function is executed in constant time (unless the critical section management hooks are used and are not
 /// constant-time). The allocated memory is NOT zero-filled (because zero-filling is a variable-complexity operation).
 ///
-/// The function invokes critical_section_enter and critical_section_leave exactly once each (NULL hooks are ignored).
-/// It is guaranteed that critical_section_enter is invoked before critical_section_leave.
+/// The function may invoke critical_section_enter and critical_section_leave at most once each (NULL hooks ignored).
 void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount);
 
 /// The semantics follows free() with additional guarantees the full list of which is provided below.
@@ -120,9 +121,6 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount);
 /// constant-time).
 ///
 /// The function may invoke critical_section_enter and critical_section_leave at most once each (NULL hooks ignored).
-/// It is guaranteed that critical_section_enter is invoked before critical_section_leave.
-/// It is guaranteed that critical_section_enter is invoked the same number of times as critical_section_leave,
-/// unless either of them are NULL.
 void o1heapFree(O1HeapInstance* const handle, void* const pointer);
 
 /// Performs a basic sanity check on the heap.

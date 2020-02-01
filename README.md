@@ -79,8 +79,8 @@ catastrophic fragmentation cannot occur.
 
 Memory allocators used in general-purpose (non real-time) applications often leverage a different class of algorithms
 which may feature poorer worst-case performance metrics but perform (much) better on average.
-For a hard real-time system, the average case performance is generally less relevant,
-hence it can be excluded from analysis.
+For a hard real-time system, the average case performance is generally less relevant
+so it can be excluded from analysis.
 
 The above-defined theoretical worst-case upper bound H may be prohibitively high for some
 memory-constrained applications.
@@ -129,7 +129,7 @@ Mf = ⌈M/l⌉
 k = Mf - nf + 1
 
 Where *l* -- the smallest amount of memory that may be requested by the application;
-*nf* -- the size of the largest allocation expressed through the number of min-size fragments;
+*nf* -- the size of the largest allocation expressed as the number of min-size fragments;
 *Mf* -- the total amount of heap space that may be requested by the application in min-size fragments;
 *k* -- the maximum number of fragments.
 The worst case number of min-size memory fragments required is *Hf(Mf,nf) = H(Mf,nf)*.
@@ -144,7 +144,7 @@ Increase of *l* lowers the upper bound because larger fragments inherently reduc
 
 The following illustration shows the worst-case memory consumption (WCMC) for some common memory sizes;
 as explained above, *l* is chosen by the application designer freely,
-and *a* is the value of `O1HEAP_ALIGNMENT`:
+and *a* is the value of `O1HEAP_ALIGNMENT` which is platform-dependent:
 
 ![WCMC](docs/H.png "Total worst-case memory consumption (H) as a function of max fragment size (n) and total memory need (M)")
 
@@ -155,6 +155,7 @@ and *a* is the value of `O1HEAP_ALIGNMENT`:
 Copy the files `o1heap.c` and `o1heap.h` (find them under `o1heap/`) into your project tree.
 Either keep them in the same directory, or make sure that the directory that contains the header
 is added to the set of include look-up paths.
+No special compiler options are needed to compile the source file (if you find this to be untrue, please open a ticket).
 
 Dedicate a memory arena for the heap, and pass a pointer to it along with its size to the initialization function
 `o1heapInit(..)`.
