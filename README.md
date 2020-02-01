@@ -148,10 +148,6 @@ and *a* is the value of `O1HEAP_ALIGNMENT`:
 
 ![WCMC](docs/H.png "Total worst-case memory consumption (H) as a function of max fragment size (n) and total memory need (M)")
 
-The allocation and deallocation routines are strictly linear and contain neither loops nor recursive calls.
-In order to further improve the real-time performance, manual branch hinting is used,
-allowing the compiler to generate code that is optimized for the longest path, thus reducing WCET.
-
 ## Usage
 
 ### Integration
@@ -191,9 +187,10 @@ If not specified, the macro expands into the standard assertion check macro `ass
 
 Some of the conditional branching statements are equipped with this annotation to hint the compiler that
 the generated code should be optimized for the case where the corresponding branch is taken.
+This is done to reduce the worst-case execution time.
+
 The macro should expand into a compiler-specific branch weighting intrinsic,
 or into the original expression `(x)` if no such hinting is desired.
-
 If not specified, the macro expands as follows:
 
 - For some well-known compilers the macro automatically expands into appropriate branch weighting intrinsics.
