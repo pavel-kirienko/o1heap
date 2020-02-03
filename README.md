@@ -245,6 +245,13 @@ Do not suppress compliance warnings using the means provided by static analysis 
 are impossible to track at the source code level.
 An exception applies for the case of false-positive (invalid) warnings -- those should not be mentioned in the codebase.
 
+## Further reading
+
+- [Timing-Predictable Memory Allocation In Hard Real-Time Systems](https://publikationen.sulb.uni-saarland.de/bitstream/20.500.11880/26614/1/diss.pdf), J. Herter, 2014.
+- [Worst case fragmentation of first fit and best fit storage allocation strategies](https://academic.oup.com/comjnl/article/20/3/242/751782), J. M. Robson, 1975.
+- [Dynamic Memory Allocation In SQLite](https://sqlite.org/malloc.html) -- on Robson proof and deterministic fragmentation.
+- *[Russian]* [Динамическая память в системах жёсткого реального времени](https://habr.com/ru/post/486650/) -- issues with dynamic memory allocation in modern embedded RTOS and related popular misconceptions.
+
 ## License
 
 The library is available under the terms of the MIT License.
