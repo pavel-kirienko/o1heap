@@ -30,7 +30,7 @@ extern "C" {
 /// The semantic version number of this distribution.
 #define O1HEAP_VERSION_MAJOR 1
 
-/// The guaranteed alignment depends on the platform pointer width. This is also the smallest allocation size.
+/// The guaranteed alignment depends on the platform pointer width.
 #define O1HEAP_ALIGNMENT (sizeof(void*) * 4U)
 
 /// The definition is private, so the user code can only operate on pointers. This is done to enforce encapsulation.
