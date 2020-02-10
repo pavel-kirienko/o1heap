@@ -5,14 +5,14 @@
 [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=pavel-kirienko_o1heap&metric=reliability_rating)](https://sonarcloud.io/dashboard?id=pavel-kirienko_o1heap)
 
 O1heap is a highly deterministic constant-complexity memory allocator designed for
-hard real-time safety-critical embedded systems.
+hard real-time high-integrity embedded systems.
 The name stands for *O(1) heap*.
 
 The allocator offers
 a constant worst-case execution time (WCET) and
 a well-characterized worst-case memory fragmentation (consumption) (WCMC).
 The allocator allows the designer to statically prove its temporal and spatial properties for a given application,
-which makes it suitable for use in safety-critical systems.
+which makes it suitable for use in high-integrity embedded systems.
 
 The codebase is implemented in C99/C11 following MISRA C:2012, with several intended deviations which are unavoidable
 due to the fact that a memory allocator has to rely on inherently unsafe operations to fulfill its purpose.
@@ -35,7 +35,7 @@ The core objective of this library is to provide a dynamic memory allocator that
   memory allocator to ensure that out-of-memory (OOM) failures provably cannot occur at runtime
   under any circumstances.
 
-- The implementation shall be simple and conform to relevant safety-critical coding guidelines.
+- The implementation shall be simple and conform to relevant high-integrity coding guidelines.
 
 ### Theory
 
@@ -57,7 +57,7 @@ While it has been shown to be possible to construct a constant-complexity alloca
 worst-case and average-case memory requirements by making assumptions about the memory (de-)allocation patterns
 and/or by relying on more sophisticated algorithms, this implementation chooses a conservative approach
 where no assumptions are made about the application and the codebase is kept simple to facilitate its integration
-into verified and validated safety-critical software.
+into verified and validated high-integrity software.
 
 The library implements a modified Half-Fit algorithm -- a constant-complexity strategy originally proposed by Ogasawara.
 In this implementation, memory is allocated in fragments whose size is rounded up to the next integer power of two.
