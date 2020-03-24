@@ -96,7 +96,7 @@ interested readers are advised to consult with the referred publications.
 Following some of the ideas expressed in the discussion about memory caching in real-time systems in [Herter 2014],
 this implementation takes caching-related issues into consideration.
 The Half-Fit algorithm itself is inherently optimized to minimize the number of random memory accesses.
-Furthermore, the allocation strategy favors least recently used memory fragments
+Furthermore, the allocation strategy favors most recently used memory fragments
 to minimize cache misses in the application.
 
 ### Implementation
