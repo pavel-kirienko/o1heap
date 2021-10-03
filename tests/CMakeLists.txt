@@ -78,21 +78,24 @@ function(gen_test name files compile_definitions compile_features compile_flags 
     add_test("run_${name}" "${name}" --rng-seed time)
 endfunction()
 
-function(gen_test_matrix name files compile_definitions compile_flags)
-    gen_test("${name}_c99_x64" "${files}" "${compile_definitions}" c_std_99 "${compile_flags} -m64" "-m64")
-    gen_test("${name}_c99_x32" "${files}" "${compile_definitions}" c_std_99 "${compile_flags} -m32" "-m32")
-    gen_test("${name}_c11_x64" "${files}" "${compile_definitions}" c_std_11 "${compile_flags} -m64" "-m64")
-    gen_test("${name}_c11_x32" "${files}" "${compile_definitions}" c_std_11 "${compile_flags} -m32" "-m32")
+function(gen_test_matrix name files compile_definitions)
+    gen_test("${name}_c99_x64" "${files}" "${compile_definitions}" c_std_99 "-m64" "-m64")
+    gen_test("${name}_c99_x32" "${files}" "${compile_definitions}" c_std_99 "-m32" "-m32")
+    gen_test("${name}_c11_x64" "${files}" "${compile_definitions}" c_std_11 "-m64" "-m64")
+    gen_test("${name}_c11_x32" "${files}" "${compile_definitions}" c_std_11 "-m32" "-m32")
     # Coverage is only available for GCC builds.
     if ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") AND (CMAKE_BUILD_TYPE STREQUAL "Debug"))
-        gen_test("${name}_cov"
-                "${files}"
-                "${compile_definitions}"
-                c_std_11
-                "${compile_flags} -g -O0 --coverage"
-                "--coverage")
+        gen_test("${name}_cov" "${files}" "${compile_definitions}" c_std_11 "-g -O0 --coverage" "--coverage")
     endif ()
 endfunction()
 
-gen_test_matrix(test_private test_private.cpp O1HEAP_EXPOSE_INTERNALS=1 "-Wno-missing-declarations")
-gen_test_matrix(test_general test_general.cpp "" "")
+gen_test_matrix(
+        test_private
+        test_private.cpp
+        "O1HEAP_CONFIG_HEADER=\"${CMAKE_CURRENT_SOURCE_DIR}/cfg_test_internal.h\""
+)
+gen_test_matrix(
+        test_general
+        test_general.cpp
+        ""
+)

@@ -19,6 +19,12 @@
 
 // ---------------------------------------- BUILD CONFIGURATION OPTIONS ----------------------------------------
 
+/// Define this macro to include build configuration header. This is an alternative to the -D compiler flag.
+/// Usage example with CMake: "-DO1HEAP_CONFIG_HEADER=\"${CMAKE_CURRENT_SOURCE_DIR}/my_o1heap_config.h\""
+#ifdef O1HEAP_CONFIG_HEADER
+#    include O1HEAP_CONFIG_HEADER
+#endif
+
 /// The assertion macro defaults to the standard assert().
 /// It can be overridden to manually suppress assertion checks or use a different error handling policy.
 #ifndef O1HEAP_ASSERT
@@ -27,8 +33,6 @@
 #endif
 
 /// Branch probability annotations are used to improve the worst case execution time (WCET). They are entirely optional.
-/// A stock implementation is provided for some well-known compilers; for other compilers it defaults to nothing.
-/// If you are using a different compiler, consider overriding this value.
 #ifndef O1HEAP_LIKELY
 #    if defined(__GNUC__) || defined(__clang__) || defined(__CC_ARM)
 // Intentional violation of MISRA: branch hinting macro cannot be replaced with a function definition.
@@ -39,9 +43,7 @@
 #endif
 
 /// This option is used for testing only. Do not use in production.
-#if defined(O1HEAP_EXPOSE_INTERNALS) && O1HEAP_EXPOSE_INTERNALS
-#    define O1HEAP_PRIVATE
-#else
+#ifndef O1HEAP_PRIVATE
 #    define O1HEAP_PRIVATE static inline
 #endif
 
