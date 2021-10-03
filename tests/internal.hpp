@@ -38,7 +38,6 @@ auto isPowerOf2(const std::size_t x) -> bool;
 auto log2Floor(const std::size_t x) -> std::uint8_t;
 auto log2Ceil(const std::size_t x) -> std::uint8_t;
 auto pow2(const std::uint8_t power) -> std::size_t;
-void invoke(const O1HeapHook hook);
 }
 
 struct Fragment;
@@ -145,9 +144,6 @@ struct O1HeapInstance final
     std::array<Fragment*, sizeof(std::size_t) * 8U> bins{};
 
     std::size_t nonempty_bin_mask = 0;
-
-    O1HeapHook critical_section_enter = nullptr;
-    O1HeapHook critical_section_leave = nullptr;
 
     /// The same data is available via getDiagnostics(). The duplication is intentional.
     O1HeapDiagnostics diagnostics{};

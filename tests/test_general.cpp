@@ -20,47 +20,6 @@
 #include <iostream>
 #include <random>
 
-namespace cs
-{
-namespace
-{
-volatile std::uint64_t g_cnt_enter = 0;  // NOLINT
-volatile std::uint64_t g_cnt_leave = 0;  // NOLINT
-
-void ensureNotInside()
-{
-    REQUIRE(g_cnt_enter == g_cnt_leave);
-}
-
-void enter()
-{
-    ensureNotInside();
-    g_cnt_enter++;
-}
-
-void leave()
-{
-    g_cnt_leave++;
-    ensureNotInside();
-}
-
-void resetCounters()
-{
-    ensureNotInside();
-    g_cnt_enter = 0;
-    g_cnt_leave = 0;
-}
-
-void validateAndReset(const std::uint64_t cnt)
-{
-    REQUIRE(g_cnt_enter == cnt);
-    REQUIRE(g_cnt_leave == cnt);
-    resetCounters();
-}
-
-}  // namespace
-}  // namespace cs
-
 namespace
 {
 constexpr std::size_t KiB = 1024U;
@@ -87,25 +46,18 @@ auto getRandomByte()
     return static_cast<std::byte>(dis(gen));
 }
 
-auto init(void* const       base,
-          const std::size_t size,
-          const O1HeapHook  critical_section_enter = nullptr,
-          const O1HeapHook  critical_section_leave = nullptr)
+auto init(void* const base, const std::size_t size)
 {
     using internal::Fragment;
 
     // Fill the beginning of the arena with random bytes (the entire arena may be too slow to fill).
     std::generate_n(reinterpret_cast<std::byte*>(base), std::min<std::size_t>(1 * MiB, size), getRandomByte);
 
-    const auto heap = reinterpret_cast<internal::O1HeapInstance*>(
-        o1heapInit(base, size, critical_section_enter, critical_section_leave));
+    const auto heap = reinterpret_cast<internal::O1HeapInstance*>(o1heapInit(base, size));
 
     if (heap != nullptr)
     {
         REQUIRE(reinterpret_cast<std::size_t>(heap) % O1HEAP_ALIGNMENT == 0U);
-
-        REQUIRE(heap->critical_section_enter == critical_section_enter);
-        REQUIRE(heap->critical_section_leave == critical_section_leave);
 
         heap->validate();
 
@@ -158,12 +110,9 @@ TEST_CASE("General: init")
 
     alignas(128) std::array<std::byte, 10'000U> arena{};
 
-    REQUIRE(nullptr == init(nullptr, 0U, nullptr, nullptr));
-    REQUIRE(nullptr == init(nullptr, 0U, &cs::enter, &cs::leave));
-    REQUIRE(nullptr == init(arena.data(), 0U, nullptr, nullptr));
-    REQUIRE(nullptr == init(arena.data(), 0U, &cs::enter, &cs::leave));
-    REQUIRE(nullptr == init(arena.data(), 99U, nullptr, nullptr));  // Too small.
-    REQUIRE(nullptr == init(arena.data(), 99U, &cs::enter, &cs::leave));
+    REQUIRE(nullptr == init(nullptr, 0U));
+    REQUIRE(nullptr == init(arena.data(), 0U));
+    REQUIRE(nullptr == init(arena.data(), 99U));  // Too small.
 
     // Check various offsets and sizes to make sure the initialization is done correctly in all cases.
     for (auto offset = 0U; offset < 7U; offset++)
@@ -171,19 +120,12 @@ TEST_CASE("General: init")
         for (auto size = 99U; size < 5100U; size += 111U)
         {
             REQUIRE(arena.size() >= size);
-            cs::resetCounters();
-            auto heap = init(arena.data() + offset,
-                             size - offset,
-                             (offset % 2U == 0U) ? &cs::enter : nullptr,
-                             (offset % 4U == 0U) ? &cs::leave : nullptr);
-            REQUIRE(cs::g_cnt_enter == 0);
-            REQUIRE(cs::g_cnt_leave == 0);
+            auto heap = init(arena.data() + offset, size - offset);
             if (heap != nullptr)
             {
                 REQUIRE(size >= sizeof(internal::O1HeapInstance) + Fragment::SizeMin);
                 REQUIRE(reinterpret_cast<std::size_t>(heap) >= reinterpret_cast<std::size_t>(arena.data()));
                 REQUIRE(reinterpret_cast<std::size_t>(heap) % O1HEAP_ALIGNMENT == 0U);
-
                 REQUIRE(heap->doInvariantsHold());
             }
         }
@@ -196,19 +138,14 @@ TEST_CASE("General: allocate: OOM")
     constexpr auto             ArenaSize = MiB256 + MiB;
     std::shared_ptr<std::byte> arena(static_cast<std::byte*>(std::aligned_alloc(64U, ArenaSize)));
 
-    auto heap = init(arena.get(), ArenaSize, &cs::enter, &cs::leave);
+    auto heap = init(arena.get(), ArenaSize);
     REQUIRE(heap != nullptr);
-    cs::resetCounters();
     REQUIRE(heap->getDiagnostics().capacity > ArenaSize - 1024U);
     REQUIRE(heap->getDiagnostics().capacity < ArenaSize);
     REQUIRE(heap->getDiagnostics().oom_count == 0);
-    REQUIRE(cs::g_cnt_enter == 3);
-    REQUIRE(cs::g_cnt_enter == 3);
 
     REQUIRE(nullptr == heap->allocate(ArenaSize));  // Too large
     REQUIRE(heap->getDiagnostics().oom_count == 1);
-    REQUIRE(cs::g_cnt_enter == 5);
-    REQUIRE(cs::g_cnt_enter == 5);
 
     REQUIRE(nullptr == heap->allocate(ArenaSize - O1HEAP_ALIGNMENT));  // Too large
     REQUIRE(heap->getDiagnostics().oom_count == 2);
@@ -242,18 +179,15 @@ TEST_CASE("General: allocate: smallest")
     constexpr auto             ArenaSize = MiB * 300U;
     std::shared_ptr<std::byte> arena(static_cast<std::byte*>(std::aligned_alloc(64U, ArenaSize)));
 
-    auto heap = init(arena.get(), ArenaSize, &cs::enter, &cs::leave);
+    auto heap = init(arena.get(), ArenaSize);
     REQUIRE(heap != nullptr);
-    cs::resetCounters();
 
     void* const mem = heap->allocate(1U);
-    REQUIRE(((cs::g_cnt_enter == 1) && (cs::g_cnt_leave == 1)));
     REQUIRE(mem != nullptr);
     REQUIRE(heap->getDiagnostics().oom_count == 0);
     REQUIRE(heap->getDiagnostics().peak_allocated == Fragment::SizeMin);
     REQUIRE(heap->getDiagnostics().allocated == Fragment::SizeMin);
     REQUIRE(heap->getDiagnostics().peak_request_size == 1);
-    REQUIRE(((cs::g_cnt_enter == 5) && (cs::g_cnt_leave == 5)));
 
     auto& frag = Fragment::constructFromAllocatedMemory(mem);
     REQUIRE(frag.header.size == (O1HEAP_ALIGNMENT * 2U));
@@ -277,7 +211,6 @@ TEST_CASE("General: allocate: size_t overflow")
     std::shared_ptr<std::byte> arena(static_cast<std::byte*>(std::aligned_alloc(64U, ArenaSize)));
 
     auto heap = init(arena.get(), ArenaSize);
-    cs::resetCounters();
     REQUIRE(heap != nullptr);
     REQUIRE(heap->diagnostics.capacity > (ArenaSize - 1024U));
     REQUIRE(heap->diagnostics.capacity < ArenaSize);
@@ -325,7 +258,7 @@ TEST_CASE("General: free")
     using internal::Fragment;
 
     alignas(128U) std::array<std::byte, 4096U + sizeof(internal::O1HeapInstance) + O1HEAP_ALIGNMENT - 1U> arena{};
-    auto heap = init(arena.data(), std::size(arena), &cs::enter, &cs::leave);
+    auto heap = init(arena.data(), std::size(arena));
     REQUIRE(heap != nullptr);
 
     REQUIRE(nullptr == heap->allocate(0U));
@@ -334,8 +267,6 @@ TEST_CASE("General: free")
     REQUIRE(heap->diagnostics.peak_allocated == 0U);
     REQUIRE(heap->diagnostics.peak_request_size == 0U);
     REQUIRE(heap->diagnostics.oom_count == 0U);
-
-    cs::resetCounters();
 
     std::size_t allocated         = 0U;
     std::size_t peak_allocated    = 0U;
@@ -368,10 +299,8 @@ TEST_CASE("General: free")
         REQUIRE(heap->diagnostics.allocated == allocated);
         REQUIRE(heap->diagnostics.peak_allocated == peak_allocated);
         REQUIRE(heap->diagnostics.peak_request_size == peak_request_size);
-        cs::validateAndReset(1);
         heap->matchFragments(reference);
         REQUIRE(heap->doInvariantsHold());
-        cs::validateAndReset(1);
         return p;
     };
 
@@ -387,19 +316,16 @@ TEST_CASE("General: free")
             REQUIRE(allocated >= frag.header.size);
             allocated -= frag.header.size;
             heap->free(p);
-            cs::validateAndReset(1);
         }
         else
         {
             heap->free(p);
-            cs::validateAndReset(0);
         }
         REQUIRE(heap->diagnostics.allocated == allocated);
         REQUIRE(heap->diagnostics.peak_allocated == peak_allocated);
         REQUIRE(heap->diagnostics.peak_request_size == peak_request_size);
         heap->matchFragments(reference);
         REQUIRE(heap->doInvariantsHold());
-        cs::validateAndReset(1);
     };
 
     constexpr auto X = true;   // used
@@ -554,7 +480,7 @@ TEST_CASE("General: random A")
     constexpr auto             ArenaSize = MiB * 300U;
     std::shared_ptr<std::byte> arena(static_cast<std::byte*>(std::aligned_alloc(64U, ArenaSize)));
     std::generate_n(arena.get(), ArenaSize, getRandomByte);  // Random-fill the ENTIRE arena!
-    auto heap = init(arena.get(), ArenaSize, cs::enter, cs::leave);
+    auto heap = init(arena.get(), ArenaSize);
     REQUIRE(heap != nullptr);
 
     std::vector<void*> pointers;
@@ -641,7 +567,7 @@ TEST_CASE("General: invariant checker")
     using internal::Fragment;
 
     alignas(128U) std::array<std::byte, 4096U + sizeof(internal::O1HeapInstance) + O1HEAP_ALIGNMENT - 1U> arena{};
-    auto heap = init(arena.data(), std::size(arena), &cs::enter, &cs::leave);
+    auto heap = init(arena.data(), std::size(arena));
     REQUIRE(heap != nullptr);
     REQUIRE(heap->doInvariantsHold());
     auto& dg = heap->diagnostics;

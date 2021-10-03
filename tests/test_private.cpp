@@ -68,28 +68,3 @@ TEST_CASE("Private: pow2")
     REQUIRE(pow2(8) == 256);
     REQUIRE(pow2(9) == 512);
 }
-
-namespace
-{
-std::uint64_t g_hook_invocation_count = 0;  // NOLINT
-
-extern "C" void hook()
-{
-    g_hook_invocation_count++;
-}
-
-}  // namespace
-
-TEST_CASE("Private: invokeHook")
-{
-    using internal::invoke;
-    REQUIRE(g_hook_invocation_count == 0);
-    invoke(hook);
-    REQUIRE(g_hook_invocation_count == 1);
-    invoke(hook);
-    REQUIRE(g_hook_invocation_count == 2);
-    invoke(nullptr);
-    REQUIRE(g_hook_invocation_count == 2);
-    invoke(nullptr);
-    REQUIRE(g_hook_invocation_count == 2);
-}

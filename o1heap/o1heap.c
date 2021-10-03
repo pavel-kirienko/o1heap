@@ -101,9 +101,6 @@ struct O1HeapInstance
     Fragment* bins[NUM_BINS_MAX];  ///< Smallest fragments are in the bin at index 0.
     size_t    nonempty_bin_mask;   ///< Bit 1 represents a non-empty bin; bin at index 0 is for the smallest fragments.
 
-    O1HeapHook critical_section_enter;
-    O1HeapHook critical_section_leave;
-
     O1HeapDiagnostics diagnostics;
 };
 
@@ -141,7 +138,7 @@ O1HEAP_PRIVATE uint8_t log2Floor(const size_t x)
 O1HEAP_PRIVATE uint8_t log2Ceil(const size_t x);
 O1HEAP_PRIVATE uint8_t log2Ceil(const size_t x)
 {
-    return (uint8_t)(log2Floor(x) + (isPowerOf2(x) ? 0U : 1U));
+    return (uint8_t) (log2Floor(x) + (isPowerOf2(x) ? 0U : 1U));
 }
 
 /// Raise 2 into the specified power.
@@ -151,15 +148,6 @@ O1HEAP_PRIVATE size_t pow2(const uint8_t power);
 O1HEAP_PRIVATE size_t pow2(const uint8_t power)
 {
     return ((size_t) 1U) << power;
-}
-
-O1HEAP_PRIVATE void invoke(const O1HeapHook hook);
-O1HEAP_PRIVATE void invoke(const O1HeapHook hook)
-{
-    if (hook != NULL)
-    {
-        hook();
-    }
 }
 
 /// Links two fragments so that their next/prev pointers point to each other; left goes before right.
@@ -231,10 +219,7 @@ O1HEAP_PRIVATE void unbin(O1HeapInstance* const handle, const Fragment* const fr
 
 // ---------------------------------------- PUBLIC API IMPLEMENTATION ----------------------------------------
 
-O1HeapInstance* o1heapInit(void* const      base,
-                           const size_t     size,
-                           const O1HeapHook critical_section_enter,
-                           const O1HeapHook critical_section_leave)
+O1HeapInstance* o1heapInit(void* const base, const size_t size)
 {
     O1HeapInstance* out = NULL;
     if ((base != NULL) && ((((size_t) base) % O1HEAP_ALIGNMENT) == 0U) &&
@@ -242,10 +227,8 @@ O1HeapInstance* o1heapInit(void* const      base,
     {
         // Allocate the core heap metadata structure in the beginning of the arena.
         O1HEAP_ASSERT(((size_t) base) % sizeof(O1HeapInstance*) == 0U);
-        out                         = (O1HeapInstance*) base;
-        out->nonempty_bin_mask      = 0U;
-        out->critical_section_enter = critical_section_enter;
-        out->critical_section_leave = critical_section_leave;
+        out                    = (O1HeapInstance*) base;
+        out->nonempty_bin_mask = 0U;
         for (size_t i = 0; i < NUM_BINS_MAX; i++)
         {
             out->bins[i] = NULL;
@@ -311,8 +294,6 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
         O1HEAP_ASSERT(optimal_bin_index < NUM_BINS_MAX);
         const size_t candidate_bin_mask = ~(pow2(optimal_bin_index) - 1U);
 
-        invoke(handle->critical_section_enter);
-
         // Find the smallest non-empty bin we can use.
         const size_t suitable_bins     = handle->nonempty_bin_mask & candidate_bin_mask;
         const size_t smallest_bin_mask = suitable_bins & ~(suitable_bins - 1U);  // Clear all bits but the lowest.
@@ -363,10 +344,6 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
             out = ((uint8_t*) frag) + O1HEAP_ALIGNMENT;
         }
     }
-    else
-    {
-        invoke(handle->critical_section_enter);
-    }
 
     // Update the diagnostics.
     if (O1HEAP_LIKELY(handle->diagnostics.peak_request_size < amount))
@@ -378,7 +355,6 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
         handle->diagnostics.oom_count++;
     }
 
-    invoke(handle->critical_section_leave);
     return out;
 }
 
@@ -401,8 +377,6 @@ void o1heapFree(O1HeapInstance* const handle, void* const pointer)
         O1HEAP_ASSERT(frag->header.size >= FRAGMENT_SIZE_MIN);
         O1HEAP_ASSERT(frag->header.size <= handle->diagnostics.capacity);
         O1HEAP_ASSERT((frag->header.size % FRAGMENT_SIZE_MIN) == 0U);
-
-        invoke(handle->critical_section_enter);
 
         // Even if we're going to drop the fragment later, mark it free anyway to prevent double-free.
         frag->header.used = false;
@@ -449,8 +423,6 @@ void o1heapFree(O1HeapInstance* const handle, void* const pointer)
         {
             rebin(handle, frag);
         }
-
-        invoke(handle->critical_section_leave);
     }
 }
 
@@ -458,8 +430,6 @@ bool o1heapDoInvariantsHold(const O1HeapInstance* const handle)
 {
     O1HEAP_ASSERT(handle != NULL);
     bool valid = true;
-
-    invoke(handle->critical_section_enter);
 
     // Check the bin mask consistency.
     for (size_t i = 0; i < NUM_BINS_MAX; i++)  // Dear compiler, feel free to unroll this loop.
@@ -471,8 +441,6 @@ bool o1heapDoInvariantsHold(const O1HeapInstance* const handle)
 
     // Create a local copy of the diagnostics struct to check later and release the critical section early.
     const O1HeapDiagnostics diag = handle->diagnostics;
-
-    invoke(handle->critical_section_leave);
 
     // Capacity check.
     valid = valid && (diag.capacity <= FRAGMENT_SIZE_MAX) && (diag.capacity >= FRAGMENT_SIZE_MIN) &&
@@ -501,8 +469,6 @@ bool o1heapDoInvariantsHold(const O1HeapInstance* const handle)
 O1HeapDiagnostics o1heapGetDiagnostics(const O1HeapInstance* const handle)
 {
     O1HEAP_ASSERT(handle != NULL);
-    invoke(handle->critical_section_enter);
     const O1HeapDiagnostics out = handle->diagnostics;
-    invoke(handle->critical_section_leave);
     return out;
 }
