@@ -135,7 +135,7 @@ struct Fragment final
     Fragment(const Fragment&&) = delete;
     ~Fragment()                = delete;
     auto operator=(const Fragment&) -> Fragment& = delete;
-    auto operator=(const Fragment &&) -> Fragment& = delete;
+    auto operator=(const Fragment&&) -> Fragment& = delete;
 };
 
 /// Please maintain the fields in exact sync with the private definition in o1heap.c!
@@ -262,7 +262,7 @@ struct O1HeapInstance final
     O1HeapInstance(const O1HeapInstance&&) = delete;
     ~O1HeapInstance()                      = delete;
     auto operator=(const O1HeapInstance&) -> O1HeapInstance& = delete;
-    auto operator=(const O1HeapInstance &&) -> O1HeapInstance& = delete;
+    auto operator=(const O1HeapInstance&&) -> O1HeapInstance& = delete;
 
 private:
     void validateCore() const
