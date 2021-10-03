@@ -52,6 +52,8 @@ Mkfile.old
 dkms.conf
 
 # IDE & outputs
-.idea/
+**/.idea/*
+!**/.idea/dictionaries
+!**/.idea/dictionaries/*
 cmake-build-*/
 build/

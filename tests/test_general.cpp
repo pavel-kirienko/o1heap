@@ -11,7 +11,7 @@
 // OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
-// Copyright (c) 2020 UAVCAN Development Team
+// Copyright (c) 2020 Pavel Kirienko
 // Authors: Pavel Kirienko <pavel.kirienko@zubax.com>
 
 #include "internal.hpp"
@@ -24,8 +24,8 @@ namespace cs
 {
 namespace
 {
-volatile std::uint64_t g_cnt_enter = 0;
-volatile std::uint64_t g_cnt_leave = 0;
+volatile std::uint64_t g_cnt_enter = 0;  // NOLINT
+volatile std::uint64_t g_cnt_leave = 0;  // NOLINT
 
 void ensureNotInside()
 {

@@ -77,9 +77,9 @@ a memory allocation request even if there is enough free memory due to its subop
 By definition, if the amount of memory available to the allocator is not less than *H*, then the state of
 catastrophic fragmentation cannot occur.
 
-Memory allocators used in general-purpose (non real-time) applications often leverage a different class of algorithms
+Memory allocators used in general-purpose (non-real-time) applications often leverage a different class of algorithms
 which may feature poorer worst-case performance metrics but perform (much) better on average.
-For a hard real-time system, the average case performance is generally less relevant
+For a hard real-time system, the average case performance is generally less relevant,
 so it can be excluded from analysis.
 
 The above-defined theoretical worst-case upper bound H may be prohibitively high for some
@@ -90,7 +90,7 @@ the probability of a (de-)allocation sequence that results in catastrophic fragm
 When combined with an acceptable failure probability and a set of adequate assumptions about the behaviors of
 the application, this property may allow the designer to drastically reduce the amount of memory dedicated to
 the heap while ensuring a sufficient degree of predictability and reliability.
-The methods of such optimization are outside of the scope of this document;
+The methods of such optimization are outside the scope of this document;
 interested readers are advised to consult with the referred publications.
 
 Following some of the ideas expressed in the discussion about memory caching in real-time systems in [Herter 2014],

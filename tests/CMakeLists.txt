@@ -11,7 +11,7 @@
 # OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 # OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
-# Copyright (c) 2020 UAVCAN Development Team
+# Copyright (c) 2020 Pavel Kirienko
 # Authors: Pavel Kirienko <pavel.kirienko@zubax.com>
 
 cmake_minimum_required(VERSION 3.12)
@@ -29,7 +29,7 @@ set(library_dir "${CMAKE_SOURCE_DIR}/../o1heap")
 # If not suppressed, the tools used here shall be available, otherwise the build will fail.
 if (NOT NO_STATIC_ANALYSIS)
     # clang-tidy (separate config files per directory)
-    find_program(clang_tidy NAMES clang-tidy-10 clang-tidy-9 clang-tidy)
+    find_program(clang_tidy NAMES clang-tidy-12 clang-tidy)
     if (NOT clang_tidy)
         message(FATAL_ERROR "Could not locate clang-tidy")
     endif ()
@@ -38,7 +38,7 @@ if (NOT NO_STATIC_ANALYSIS)
     set(CMAKE_CXX_CLANG_TIDY ${clang_tidy})
 
     # clang-format
-    find_program(clang_format NAMES clang-format-10 clang-format-9 clang-format)
+    find_program(clang_format NAMES clang-format-12 clang-format)
     if (NOT clang_format)
         message(FATAL_ERROR "Could not locate clang-format")
     endif ()
