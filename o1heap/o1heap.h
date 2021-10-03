@@ -28,7 +28,7 @@ extern "C" {
 #endif
 
 /// The semantic version number of this distribution.
-#define O1HEAP_VERSION_MAJOR 1
+#define O1HEAP_VERSION_MAJOR 2
 
 /// The guaranteed alignment depends on the platform pointer width.
 #define O1HEAP_ALIGNMENT (sizeof(void*) * 4U)
@@ -40,12 +40,12 @@ typedef struct O1HeapInstance O1HeapInstance;
 /// as required by certain safety-critical development guidelines.
 /// If assertion checks are not disabled, the library will perform automatic runtime self-diagnostics that trigger
 /// an assertion failure if a heap corruption is detected.
-/// Health checks and validation can be done with @ref o1heapDoInvariantsHold().
+/// Health checks and validation can be done with o1heapDoInvariantsHold().
 typedef struct
 {
     /// The total amount of memory available for serving allocation requests (heap size).
     /// The maximum allocation size is (capacity - O1HEAP_ALIGNMENT).
-    /// This parameter does not include the overhead used up by @ref O1HeapInstance and arena alignment.
+    /// This parameter does not include the overhead used up by O1HeapInstance and arena alignment.
     /// This parameter is constant.
     size_t capacity;
 
@@ -66,7 +66,7 @@ typedef struct
     uint64_t oom_count;
 } O1HeapDiagnostics;
 
-/// The arena base pointer shall be aligned at @ref O1HEAP_ALIGNMENT, otherwise NULL is returned.
+/// The arena base pointer shall be aligned at O1HEAP_ALIGNMENT, otherwise NULL is returned.
 ///
 /// The total heap capacity cannot exceed approx. (SIZE_MAX/2). If the arena size allows for a larger heap,
 /// the excess will be silently truncated away (no error). This is not a realistic use case because a typical
@@ -87,7 +87,7 @@ O1HeapInstance* o1heapInit(void* const base, const size_t size);
 /// The semantics follows malloc() with additional guarantees the full list of which is provided below.
 ///
 /// If the allocation request is served successfully, a pointer to the newly allocated memory fragment is returned.
-/// The returned pointer is guaranteed to be aligned at @ref O1HEAP_ALIGNMENT.
+/// The returned pointer is guaranteed to be aligned at O1HEAP_ALIGNMENT.
 ///
 /// If the allocation request cannot be served due to the lack of memory or its excessive fragmentation,
 /// a NULL pointer is returned.
@@ -111,7 +111,7 @@ void o1heapFree(O1HeapInstance* const handle, void* const pointer);
 /// The return value is truth if the heap looks valid, falsity otherwise.
 bool o1heapDoInvariantsHold(const O1HeapInstance* const handle);
 
-/// Samples and returns a copy of the diagnostic information, see @ref O1HeapDiagnostics.
+/// Samples and returns a copy of the diagnostic information, see O1HeapDiagnostics.
 /// This function merely copies the structure from an internal storage, so it is fast to return.
 /// If the handle pointer is NULL, the behavior is undefined.
 O1HeapDiagnostics o1heapGetDiagnostics(const O1HeapInstance* const handle);

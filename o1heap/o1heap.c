@@ -112,14 +112,12 @@ static_assert(INSTANCE_SIZE_PADDED >= sizeof(O1HeapInstance), "Invalid instance 
 static_assert((INSTANCE_SIZE_PADDED % O1HEAP_ALIGNMENT) == 0U, "Invalid instance footprint computation");
 
 /// True if the argument is an integer power of two or zero.
-O1HEAP_PRIVATE bool isPowerOf2(const size_t x);
 O1HEAP_PRIVATE bool isPowerOf2(const size_t x)
 {
     return (x & (x - 1U)) == 0U;
 }
 
 /// Special case: if the argument is zero, returns zero.
-O1HEAP_PRIVATE uint8_t log2Floor(const size_t x);
 O1HEAP_PRIVATE uint8_t log2Floor(const size_t x)
 {
     size_t  tmp = x;
@@ -135,7 +133,6 @@ O1HEAP_PRIVATE uint8_t log2Floor(const size_t x)
 }
 
 /// Special case: if the argument is zero, returns zero.
-O1HEAP_PRIVATE uint8_t log2Ceil(const size_t x);
 O1HEAP_PRIVATE uint8_t log2Ceil(const size_t x)
 {
     return (uint8_t) (log2Floor(x) + (isPowerOf2(x) ? 0U : 1U));
@@ -144,14 +141,12 @@ O1HEAP_PRIVATE uint8_t log2Ceil(const size_t x)
 /// Raise 2 into the specified power.
 /// You might be tempted to do something like (1U << power). WRONG! We humans are prone to forgetting things.
 /// If you forget to cast your 1U to size_t or ULL, you may end up with undefined behavior.
-O1HEAP_PRIVATE size_t pow2(const uint8_t power);
 O1HEAP_PRIVATE size_t pow2(const uint8_t power)
 {
     return ((size_t) 1U) << power;
 }
 
 /// Links two fragments so that their next/prev pointers point to each other; left goes before right.
-O1HEAP_PRIVATE void interlink(Fragment* const left, Fragment* const right);
 O1HEAP_PRIVATE void interlink(Fragment* const left, Fragment* const right)
 {
     if (O1HEAP_LIKELY(left != NULL))
@@ -164,8 +159,7 @@ O1HEAP_PRIVATE void interlink(Fragment* const left, Fragment* const right)
     }
 }
 
-/// Adds a new block into the appropriate bin and updates the lookup mask.
-O1HEAP_PRIVATE void rebin(O1HeapInstance* const handle, Fragment* const fragment);
+/// Adds a new fragment into the appropriate bin and updates the lookup mask.
 O1HEAP_PRIVATE void rebin(O1HeapInstance* const handle, Fragment* const fragment)
 {
     O1HEAP_ASSERT(handle != NULL);
@@ -175,7 +169,7 @@ O1HEAP_PRIVATE void rebin(O1HeapInstance* const handle, Fragment* const fragment
     const uint8_t idx = log2Floor(fragment->header.size / FRAGMENT_SIZE_MIN);  // Round DOWN when inserting.
     O1HEAP_ASSERT(idx < NUM_BINS_MAX);
     // Add the new fragment to the beginning of the bin list.
-    // I.e., each allocation will be returning the least-recently-used fragment -- good for caching.
+    // I.e., each allocation will be returning the most-recently-used fragment -- good for caching.
     fragment->next_free = handle->bins[idx];
     fragment->prev_free = NULL;
     if (O1HEAP_LIKELY(handle->bins[idx] != NULL))
@@ -186,8 +180,7 @@ O1HEAP_PRIVATE void rebin(O1HeapInstance* const handle, Fragment* const fragment
     handle->nonempty_bin_mask |= pow2(idx);
 }
 
-/// Removes the specified block from its bin.
-O1HEAP_PRIVATE void unbin(O1HeapInstance* const handle, const Fragment* const fragment);
+/// Removes the specified fragment from its bin.
 O1HEAP_PRIVATE void unbin(O1HeapInstance* const handle, const Fragment* const fragment)
 {
     O1HEAP_ASSERT(handle != NULL);
@@ -439,7 +432,7 @@ bool o1heapDoInvariantsHold(const O1HeapInstance* const handle)
         valid                   = valid && (mask_bit_set == bin_nonempty);
     }
 
-    // Create a local copy of the diagnostics struct to check later and release the critical section early.
+    // Create a local copy of the diagnostics struct.
     const O1HeapDiagnostics diag = handle->diagnostics;
 
     // Capacity check.

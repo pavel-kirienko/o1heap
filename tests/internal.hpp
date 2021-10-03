@@ -385,7 +385,7 @@ private:
     }
 };
 
-static_assert(O1HEAP_VERSION_MAJOR == 1);
+static_assert(O1HEAP_VERSION_MAJOR == 2);
 
 }  // namespace internal
 

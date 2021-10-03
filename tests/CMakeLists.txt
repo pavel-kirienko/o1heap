@@ -34,7 +34,7 @@ if (NOT NO_STATIC_ANALYSIS)
         message(FATAL_ERROR "Could not locate clang-tidy")
     endif ()
     message(STATUS "Using clang-tidy: ${clang_tidy}")
-    set(CMAKE_C_CLANG_TIDY   ${clang_tidy})
+    set(CMAKE_C_CLANG_TIDY ${clang_tidy})
     set(CMAKE_CXX_CLANG_TIDY ${clang_tidy})
 
     # clang-format
@@ -43,9 +43,9 @@ if (NOT NO_STATIC_ANALYSIS)
         message(FATAL_ERROR "Could not locate clang-format")
     endif ()
     file(
-        GLOB format_files
-        ${library_dir}/*.[ch]
-        ${CMAKE_SOURCE_DIR}/*.[ch]pp
+            GLOB format_files
+            ${library_dir}/*.[ch]
+            ${CMAKE_SOURCE_DIR}/*.[ch]pp
     )
     message(STATUS "Using clang-format: ${clang_format}; files: ${format_files}")
     add_custom_target(format COMMAND ${clang_format} -i -fallback-style=none -style=file --verbose ${format_files})
@@ -78,16 +78,21 @@ function(gen_test name files compile_definitions compile_features compile_flags 
     add_test("run_${name}" "${name}" --rng-seed time)
 endfunction()
 
-function(gen_test_matrix name files compile_definitions)
-    gen_test("${name}_c99_x64" "${files}" "${compile_definitions}" c_std_99 "-m64" "-m64")
-    gen_test("${name}_c99_x32" "${files}" "${compile_definitions}" c_std_99 "-m32" "-m32")
-    gen_test("${name}_c11_x64" "${files}" "${compile_definitions}" c_std_11 "-m64" "-m64")
-    gen_test("${name}_c11_x32" "${files}" "${compile_definitions}" c_std_11 "-m32" "-m32")
+function(gen_test_matrix name files compile_definitions compile_flags)
+    gen_test("${name}_c99_x64" "${files}" "${compile_definitions}" c_std_99 "${compile_flags} -m64" "-m64")
+    gen_test("${name}_c99_x32" "${files}" "${compile_definitions}" c_std_99 "${compile_flags} -m32" "-m32")
+    gen_test("${name}_c11_x64" "${files}" "${compile_definitions}" c_std_11 "${compile_flags} -m64" "-m64")
+    gen_test("${name}_c11_x32" "${files}" "${compile_definitions}" c_std_11 "${compile_flags} -m32" "-m32")
     # Coverage is only available for GCC builds.
     if ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") AND (CMAKE_BUILD_TYPE STREQUAL "Debug"))
-        gen_test("${name}_cov" "${files}" "${compile_definitions}" c_std_11 "-g -O0 --coverage" "--coverage")
+        gen_test("${name}_cov"
+                "${files}"
+                "${compile_definitions}"
+                c_std_11
+                "${compile_flags} -g -O0 --coverage"
+                "--coverage")
     endif ()
 endfunction()
 
-gen_test_matrix(test_private test_private.cpp O1HEAP_EXPOSE_INTERNALS=1)
-gen_test_matrix(test_general test_general.cpp "")
+gen_test_matrix(test_private test_private.cpp O1HEAP_EXPOSE_INTERNALS=1 "-Wno-missing-declarations")
+gen_test_matrix(test_general test_general.cpp "" "")
