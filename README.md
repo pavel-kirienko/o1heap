@@ -223,6 +223,10 @@ Compliance is enforced through the following means:
 
 Please refer to the continuous integration configuration to see how to invoke the tests.
 
+### Releasing
+
+Update the version number macro in the header file and create a new git tag like `1.0`.
+
 ### MISRA compliance
 
 MISRA compliance is enforced with the help of the following tools:
