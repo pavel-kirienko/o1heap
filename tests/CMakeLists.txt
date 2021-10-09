@@ -11,7 +11,7 @@
 # OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 # OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
-# Copyright (c) 2020 UAVCAN Development Team
+# Copyright (c) 2020 Pavel Kirienko
 # Authors: Pavel Kirienko <pavel.kirienko@zubax.com>
 
 cmake_minimum_required(VERSION 3.12)
@@ -29,23 +29,23 @@ set(library_dir "${CMAKE_SOURCE_DIR}/../o1heap")
 # If not suppressed, the tools used here shall be available, otherwise the build will fail.
 if (NOT NO_STATIC_ANALYSIS)
     # clang-tidy (separate config files per directory)
-    find_program(clang_tidy NAMES clang-tidy-10 clang-tidy-9 clang-tidy)
+    find_program(clang_tidy NAMES clang-tidy-12 clang-tidy)
     if (NOT clang_tidy)
         message(FATAL_ERROR "Could not locate clang-tidy")
     endif ()
     message(STATUS "Using clang-tidy: ${clang_tidy}")
-    set(CMAKE_C_CLANG_TIDY   ${clang_tidy})
+    set(CMAKE_C_CLANG_TIDY ${clang_tidy})
     set(CMAKE_CXX_CLANG_TIDY ${clang_tidy})
 
     # clang-format
-    find_program(clang_format NAMES clang-format-10 clang-format-9 clang-format)
+    find_program(clang_format NAMES clang-format-12 clang-format)
     if (NOT clang_format)
         message(FATAL_ERROR "Could not locate clang-format")
     endif ()
     file(
-        GLOB format_files
-        ${library_dir}/*.[ch]
-        ${CMAKE_SOURCE_DIR}/*.[ch]pp
+            GLOB format_files
+            ${library_dir}/*.[ch]
+            ${CMAKE_SOURCE_DIR}/*.[ch]pp
     )
     message(STATUS "Using clang-format: ${clang_format}; files: ${format_files}")
     add_custom_target(format COMMAND ${clang_format} -i -fallback-style=none -style=file --verbose ${format_files})
@@ -89,5 +89,13 @@ function(gen_test_matrix name files compile_definitions)
     endif ()
 endfunction()
 
-gen_test_matrix(test_private test_private.cpp O1HEAP_EXPOSE_INTERNALS=1)
-gen_test_matrix(test_general test_general.cpp "")
+gen_test_matrix(
+        test_private
+        test_private.cpp
+        "O1HEAP_CONFIG_HEADER=\"${CMAKE_CURRENT_SOURCE_DIR}/cfg_test_internal.h\""
+)
+gen_test_matrix(
+        test_general
+        test_general.cpp
+        ""
+)

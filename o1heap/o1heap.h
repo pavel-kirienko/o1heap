@@ -28,7 +28,7 @@ extern "C" {
 #endif
 
 /// The semantic version number of this distribution.
-#define O1HEAP_VERSION_MAJOR 1
+#define O1HEAP_VERSION_MAJOR 2
 
 /// The guaranteed alignment depends on the platform pointer width.
 #define O1HEAP_ALIGNMENT (sizeof(void*) * 4U)
@@ -36,19 +36,16 @@ extern "C" {
 /// The definition is private, so the user code can only operate on pointers. This is done to enforce encapsulation.
 typedef struct O1HeapInstance O1HeapInstance;
 
-/// A hook function invoked by the allocator. NULL hooks are silently not invoked (not an error).
-typedef void (*O1HeapHook)(void);
-
 /// Runtime diagnostic information. This information can be used to facilitate runtime self-testing,
 /// as required by certain safety-critical development guidelines.
 /// If assertion checks are not disabled, the library will perform automatic runtime self-diagnostics that trigger
 /// an assertion failure if a heap corruption is detected.
-/// Health checks and validation can be done with @ref o1heapDoInvariantsHold().
+/// Health checks and validation can be done with o1heapDoInvariantsHold().
 typedef struct
 {
     /// The total amount of memory available for serving allocation requests (heap size).
     /// The maximum allocation size is (capacity - O1HEAP_ALIGNMENT).
-    /// This parameter does not include the overhead used up by @ref O1HeapInstance and arena alignment.
+    /// This parameter does not include the overhead used up by O1HeapInstance and arena alignment.
     /// This parameter is constant.
     size_t capacity;
 
@@ -69,19 +66,11 @@ typedef struct
     uint64_t oom_count;
 } O1HeapDiagnostics;
 
-/// The arena base pointer shall be aligned at @ref O1HEAP_ALIGNMENT, otherwise NULL is returned.
+/// The arena base pointer shall be aligned at O1HEAP_ALIGNMENT, otherwise NULL is returned.
 ///
 /// The total heap capacity cannot exceed approx. (SIZE_MAX/2). If the arena size allows for a larger heap,
 /// the excess will be silently truncated away (no error). This is not a realistic use case because a typical
 /// application is unlikely to be able to dedicate that much of the address space for the heap.
-///
-/// The critical section enter/leave callbacks will be invoked when the allocator performs an atomic transaction.
-/// There is at most one atomic transaction per allocation/deallocation.
-/// Either or both of the callbacks may be NULL if locking is not needed (i.e., the heap is not shared).
-/// It is guaranteed that a critical section will never be entered recursively.
-/// It is guaranteed that 'enter' is invoked the same number of times as 'leave', unless either of them are NULL.
-/// It is guaranteed that 'enter' is invoked before 'leave', unless either of them are NULL.
-/// The callbacks are never invoked from the initialization function itself.
 ///
 /// The function initializes a new heap instance allocated in the provided arena, taking some of its space for its
 /// own needs (normally about 40..600 bytes depending on the architecture, but this parameter is not characterized).
@@ -92,24 +81,19 @@ typedef struct
 /// An initialized instance does not hold any resources. Therefore, if the instance is no longer needed,
 /// it can be discarded without any de-initialization procedures.
 ///
-/// The time complexity is unspecified.
-O1HeapInstance* o1heapInit(void* const      base,
-                           const size_t     size,
-                           const O1HeapHook critical_section_enter,
-                           const O1HeapHook critical_section_leave);
+/// The heap is not thread-safe; external synchronization may be required.
+O1HeapInstance* o1heapInit(void* const base, const size_t size);
 
 /// The semantics follows malloc() with additional guarantees the full list of which is provided below.
 ///
 /// If the allocation request is served successfully, a pointer to the newly allocated memory fragment is returned.
-/// The returned pointer is guaranteed to be aligned at @ref O1HEAP_ALIGNMENT.
+/// The returned pointer is guaranteed to be aligned at O1HEAP_ALIGNMENT.
 ///
 /// If the allocation request cannot be served due to the lack of memory or its excessive fragmentation,
 /// a NULL pointer is returned.
 ///
-/// The function is executed in constant time (unless the critical section management hooks are used and are not
-/// constant-time). The allocated memory is NOT zero-filled (because zero-filling is a variable-complexity operation).
-///
-/// The function may invoke critical_section_enter and critical_section_leave at most once each (NULL hooks ignored).
+/// The function is executed in constant time.
+/// The allocated memory is NOT zero-filled (because zero-filling is a variable-complexity operation).
 void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount);
 
 /// The semantics follows free() with additional guarantees the full list of which is provided below.
@@ -117,23 +101,18 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount);
 /// If the pointer does not point to a previously allocated block and is not NULL, the behavior is undefined.
 /// Builds where assertion checks are enabled may trigger an assertion failure for some invalid inputs.
 ///
-/// The function is executed in constant time (unless the critical section management hooks are used and are not
-/// constant-time).
-///
-/// The function may invoke critical_section_enter and critical_section_leave at most once each (NULL hooks ignored).
+/// The function is executed in constant time.
 void o1heapFree(O1HeapInstance* const handle, void* const pointer);
 
 /// Performs a basic sanity check on the heap.
 /// This function can be used as a weak but fast method of heap corruption detection.
-/// It invokes critical_section_enter once (unless NULL) and then critical_section_leave once (unless NULL).
 /// If the handle pointer is NULL, the behavior is undefined.
 /// The time complexity is constant.
 /// The return value is truth if the heap looks valid, falsity otherwise.
 bool o1heapDoInvariantsHold(const O1HeapInstance* const handle);
 
-/// Samples and returns a copy of the diagnostic information, see @ref O1HeapDiagnostics.
+/// Samples and returns a copy of the diagnostic information, see O1HeapDiagnostics.
 /// This function merely copies the structure from an internal storage, so it is fast to return.
-/// It invokes critical_section_enter once (unless NULL) and then critical_section_leave once (unless NULL).
 /// If the handle pointer is NULL, the behavior is undefined.
 O1HeapDiagnostics o1heapGetDiagnostics(const O1HeapInstance* const handle);
 

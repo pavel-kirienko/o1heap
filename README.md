@@ -16,7 +16,7 @@ which makes it suitable for use in high-integrity embedded systems.
 
 The codebase is implemented in C99/C11 following MISRA C:2012, with several intended deviations which are unavoidable
 due to the fact that a memory allocator has to rely on inherently unsafe operations to fulfill its purpose.
-The codebase is extremely compact (<500 SLoC) and is therefore trivial to validate.
+The codebase is extremely compact (<500 LoC) and is therefore trivial to validate.
 
 The allocator is designed to be portable across all conventional architectures, from 8-bit to 64-bit systems.
 Multi-threaded environments are supported with the help of external synchronization hooks provided by the application.
@@ -77,9 +77,9 @@ a memory allocation request even if there is enough free memory due to its subop
 By definition, if the amount of memory available to the allocator is not less than *H*, then the state of
 catastrophic fragmentation cannot occur.
 
-Memory allocators used in general-purpose (non real-time) applications often leverage a different class of algorithms
+Memory allocators used in general-purpose (non-real-time) applications often leverage a different class of algorithms
 which may feature poorer worst-case performance metrics but perform (much) better on average.
-For a hard real-time system, the average case performance is generally less relevant
+For a hard real-time system, the average case performance is generally less relevant,
 so it can be excluded from analysis.
 
 The above-defined theoretical worst-case upper bound H may be prohibitively high for some
@@ -90,7 +90,7 @@ the probability of a (de-)allocation sequence that results in catastrophic fragm
 When combined with an acceptable failure probability and a set of adequate assumptions about the behaviors of
 the application, this property may allow the designer to drastically reduce the amount of memory dedicated to
 the heap while ensuring a sufficient degree of predictability and reliability.
-The methods of such optimization are outside of the scope of this document;
+The methods of such optimization are outside the scope of this document;
 interested readers are advised to consult with the referred publications.
 
 Following some of the ideas expressed in the discussion about memory caching in real-time systems in [Herter 2014],
@@ -173,15 +173,18 @@ and its internal data structures are not damaged.
 
 ### Build configuration options
 
-The preprocessor options given below can be overridden (e.g., using the `-D` compiler flag, depending on the compiler)
-to fine-tune the implementation.
+The preprocessor options given below can be overridden to fine-tune the implementation.
 None of them are mandatory to use.
+
+#### O1HEAP_CONFIG_HEADER
+
+Define this optional macro like `O1HEAP_CONFIG_HEADER="path/to/my_o1heap_config.h"` to pass build configuration macros.
+This is useful because some build systems do not allow passing function-like macros via command line flags.
 
 #### O1HEAP_ASSERT(x)
 
 The macro `O1HEAP_ASSERT(x)` can be defined to customize the assertion handling or to disable it.
 To disable assertion checks, the macro should expand into `(void)(x)`.
-
 If not specified, the macro expands into the standard assertion check macro `assert(x)` as defined in `<assert.h>`.
 
 #### O1HEAP_LIKELY(x)
@@ -195,7 +198,7 @@ or into the original expression `(x)` if no such hinting is desired.
 If not specified, the macro expands as follows:
 
 - For some well-known compilers the macro automatically expands into appropriate branch weighting intrinsics.
-For example, for GCC, Clang, and ARM Compiler, it expands into `__builtin_expect((x), 1)`.
+  For example, for GCC, Clang, and ARM Compiler, it expands into `__builtin_expect((x), 1)`.
 - For other (unknown) compilers it expands into the original expression with no modifications: `(x)`.
 
 ## Development
@@ -204,9 +207,7 @@ For example, for GCC, Clang, and ARM Compiler, it expands into `__builtin_expect
 
 The following tools should be available locally to conduct library development:
 
-- GCC v9 or newer.
-- Clang and Clang-Tools v9 or newer.
-- CMake v3.12 or newer.
+- Modern versions of CMake, GCC, Clang, and Clang-Tools.
 - An AMD64 machine.
 - (optional) Valgrind.
 
@@ -222,6 +223,10 @@ Compliance is enforced through the following means:
 ### Testing
 
 Please refer to the continuous integration configuration to see how to invoke the tests.
+
+### Releasing
+
+Update the version number macro in the header file and create a new git tag like `1.0`.
 
 ### MISRA compliance
 
@@ -251,6 +256,17 @@ An exception applies for the case of false-positive (invalid) warnings -- those 
 - [Worst case fragmentation of first fit and best fit storage allocation strategies](https://academic.oup.com/comjnl/article/20/3/242/751782), J. M. Robson, 1975.
 - [Dynamic Memory Allocation In SQLite](https://sqlite.org/malloc.html) -- on Robson proof and deterministic fragmentation.
 - *[Russian]* [Динамическая память в системах жёсткого реального времени](https://habr.com/ru/post/486650/) -- issues with dynamic memory allocation in modern embedded RTOS and related popular misconceptions.
+
+## Changelog
+
+### v2.0
+
+- Remove critical section hooks to enhance MISRA conformance [#4](https://github.com/pavel-kirienko/o1heap/issues/4)
+- Add support for config header via `O1HEAP_CONFIG_HEADER` [#5](https://github.com/pavel-kirienko/o1heap/issues/5)
+
+### v1.0
+
+The first release.
 
 ## License
 

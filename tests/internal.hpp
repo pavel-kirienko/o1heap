@@ -11,7 +11,7 @@
 // OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
-// Copyright (c) 2020 UAVCAN Development Team
+// Copyright (c) 2020 Pavel Kirienko
 // Authors: Pavel Kirienko <pavel.kirienko@zubax.com>
 
 #ifndef O1HEAP_TESTS_INTERNAL_HPP_INCLUDED
@@ -38,7 +38,6 @@ auto isPowerOf2(const std::size_t x) -> bool;
 auto log2Floor(const std::size_t x) -> std::uint8_t;
 auto log2Ceil(const std::size_t x) -> std::uint8_t;
 auto pow2(const std::uint8_t power) -> std::size_t;
-void invoke(const O1HeapHook hook);
 }
 
 struct Fragment;
@@ -136,7 +135,7 @@ struct Fragment final
     Fragment(const Fragment&&) = delete;
     ~Fragment()                = delete;
     auto operator=(const Fragment&) -> Fragment& = delete;
-    auto operator=(const Fragment &&) -> Fragment& = delete;
+    auto operator=(const Fragment&&) -> Fragment& = delete;
 };
 
 /// Please maintain the fields in exact sync with the private definition in o1heap.c!
@@ -145,9 +144,6 @@ struct O1HeapInstance final
     std::array<Fragment*, sizeof(std::size_t) * 8U> bins{};
 
     std::size_t nonempty_bin_mask = 0;
-
-    O1HeapHook critical_section_enter = nullptr;
-    O1HeapHook critical_section_leave = nullptr;
 
     /// The same data is available via getDiagnostics(). The duplication is intentional.
     O1HeapDiagnostics diagnostics{};
@@ -266,7 +262,7 @@ struct O1HeapInstance final
     O1HeapInstance(const O1HeapInstance&&) = delete;
     ~O1HeapInstance()                      = delete;
     auto operator=(const O1HeapInstance&) -> O1HeapInstance& = delete;
-    auto operator=(const O1HeapInstance &&) -> O1HeapInstance& = delete;
+    auto operator=(const O1HeapInstance&&) -> O1HeapInstance& = delete;
 
 private:
     void validateCore() const
@@ -389,7 +385,7 @@ private:
     }
 };
 
-static_assert(O1HEAP_VERSION_MAJOR == 1);
+static_assert(O1HEAP_VERSION_MAJOR == 2);
 
 }  // namespace internal
 

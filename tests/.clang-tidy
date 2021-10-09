@@ -18,11 +18,14 @@ Checks: >-
   -google-readability-todo,
   -readability-avoid-const-params-in-decls,
   -llvm-header-guard,
+  -llvm-qualified-auto,
   -cppcoreguidelines-pro-type-reinterpret-cast,
   -misc-non-private-member-variables-in-classes,
   -cppcoreguidelines-pro-bounds-pointer-arithmetic,
   -cppcoreguidelines-avoid-magic-numbers,
   -readability-magic-numbers,
+  -readability-function-cognitive-complexity,
+  -readability-qualified-auto,
 WarningsAsErrors: '*'
 HeaderFilterRegex: 'internal.hpp'
 AnalyzeTemporaryDtors: false
