@@ -91,13 +91,20 @@ jobs:
         cmake tests -DCMAKE_BUILD_TYPE=Debug -DNO_STATIC_ANALYSIS=1
         build-wrapper-linux-x86-64 --out-dir ${{ env.BUILD_WRAPPER_OUT_DIR }} make all
         make test
-        gcov --preserve-paths --long-file-names $(find CMakeFiles/test_*_cov.dir -name '*.gcno')
+        gcov --preserve-paths --long-file-names $(find CMakeFiles/test_general_cov.dir -name '*.gcno')
+        gcov --preserve-paths --long-file-names $(find CMakeFiles/test_private_cov.dir -name '*.gcno')
 
     - name: Run sonar-scanner
       run: >
         sonar-scanner
-        --define sonar.host.url="${{ env.SONAR_SERVER_URL }}"
+        --define sonar.projectKey="pavel-kirienko_o1heap"
+        --define sonar.organization="pavel-kirienko"
+        --define sonar.sources="o1heap/"
+        --define sonar.sourceEncoding="UTF-8"
+        --define sonar.cfamily.gcov.reportsPath="."
         --define sonar.cfamily.build-wrapper-output="${{ env.BUILD_WRAPPER_OUT_DIR }}"
+        --define sonar.cfamily.cache.enabled="false"
+        --define sonar.host.url="${{ env.SONAR_SERVER_URL }}"
         --define sonar.login=${{ secrets.SONAR_TOKEN }}
 
   style_check:
