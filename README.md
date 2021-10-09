@@ -207,9 +207,7 @@ If not specified, the macro expands as follows:
 
 The following tools should be available locally to conduct library development:
 
-- GCC v9 or newer.
-- Clang and Clang-Tools v9 or newer.
-- CMake v3.12 or newer.
+- Modern versions of CMake, GCC, Clang, and Clang-Tools.
 - An AMD64 machine.
 - (optional) Valgrind.
 

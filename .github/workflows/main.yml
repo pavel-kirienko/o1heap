@@ -40,6 +40,7 @@ jobs:
         run: make test
 
   sonarcloud:
+    if: endsWith(github.base_ref, 'master') || endsWith(github.ref, 'master')
     runs-on: ubuntu-latest
     env:
       SONAR_SCANNER_VERSION: 4.6.1.2450
@@ -104,6 +105,7 @@ jobs:
         --define sonar.cfamily.gcov.reportsPath="."
         --define sonar.cfamily.build-wrapper-output="${{ env.BUILD_WRAPPER_OUT_DIR }}"
         --define sonar.cfamily.cache.enabled="false"
+        --define sonar.cfamily.threads=1
         --define sonar.host.url="${{ env.SONAR_SERVER_URL }}"
         --define sonar.login=${{ secrets.SONAR_TOKEN }}
 
