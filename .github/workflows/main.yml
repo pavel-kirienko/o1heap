@@ -95,6 +95,7 @@ jobs:
         gcov --preserve-paths --long-file-names $(find CMakeFiles/test_general_cov.dir -name '*.gcno')
         gcov --preserve-paths --long-file-names $(find CMakeFiles/test_private_cov.dir -name '*.gcno')
 
+    # https://community.sonarsource.com/t/analyzing-a-header-only-c-library/51468
     - name: Run sonar-scanner
       run: >
         sonar-scanner
@@ -108,6 +109,7 @@ jobs:
         --define sonar.cfamily.threads=2
         --define sonar.host.url="${{ env.SONAR_SERVER_URL }}"
         --define sonar.login=${{ secrets.SONAR_TOKEN }}
+        $([ -z "$GITHUB_BASE_REF" ] && echo "--define sonar.branch.name=${GITHUB_REF##*/}" || true)
 
   style_check:
     runs-on: ubuntu-latest
