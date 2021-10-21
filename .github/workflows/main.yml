@@ -87,9 +87,10 @@ jobs:
         unzip -o $HOME/.sonar/build-wrapper-linux-x86.zip -d $HOME/.sonar/
         echo "$HOME/.sonar/build-wrapper-linux-x86" >> $GITHUB_PATH
 
+    # Pass NDEBUG to exclude assert() from coverage; see https://github.com/pavel-kirienko/o1heap/issues/9
     - name: Run build-wrapper
       run: |
-        cmake tests -DCMAKE_BUILD_TYPE=Debug -DNO_STATIC_ANALYSIS=1
+        cmake tests -DCMAKE_BUILD_TYPE=Debug -DNO_STATIC_ANALYSIS=1 -DCMAKE_C_FLAGS='-DNDEBUG=1'
         build-wrapper-linux-x86-64 --out-dir ${{ env.BUILD_WRAPPER_OUT_DIR }} make all
         make test
         gcov --preserve-paths --long-file-names $(find CMakeFiles/test_general_cov.dir -name '*.gcno')
@@ -105,7 +106,7 @@ jobs:
         --define sonar.cfamily.gcov.reportsPath="."
         --define sonar.cfamily.build-wrapper-output="${{ env.BUILD_WRAPPER_OUT_DIR }}"
         --define sonar.cfamily.cache.enabled="false"
-        --define sonar.cfamily.threads=1
+        --define sonar.cfamily.threads=2
         --define sonar.host.url="${{ env.SONAR_SERVER_URL }}"
         --define sonar.login=${{ secrets.SONAR_TOKEN }}
 
