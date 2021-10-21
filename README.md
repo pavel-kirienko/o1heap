@@ -159,10 +159,6 @@ No special compiler options are needed to compile the source file (if you find t
 
 Dedicate a memory arena for the heap, and pass a pointer to it along with its size to the initialization function
 `o1heapInit(..)`.
-In the case of concurrent environments, also pass pointers to the synchronization locking/unlocking functions
--- they will be invoked by the library to facilitate atomic transactions.
-Alternatively, some applications (where possible) might benefit from using a separate heap per thread to avoid
-the synchronization overhead and reduce contention.
 
 Allocate and deallocate memory using `o1heapAllocate(..)` and `o1heapFree(..)`.
 Their semantics are compatible with `malloc(..)` and `free(..)` plus additional behavioral guarantees
@@ -170,6 +166,8 @@ Their semantics are compatible with `malloc(..)` and `free(..)` plus additional 
 
 If necessary, periodically invoke `o1heapDoInvariantsHold(..)` to ensure that the heap is functioning correctly
 and its internal data structures are not damaged.
+
+Avoid concurrent access to the heap. Use locking if necessary.
 
 ### Build configuration options
 
