@@ -1,7 +1,7 @@
 # O(1) heap
 
+[![Main Workflow](https://github.com/pavel-kirienko/o1heap/actions/workflows/main.yml/badge.svg)](https://github.com/pavel-kirienko/o1heap/actions/workflows/main.yml)
 [![Build Status](https://travis-ci.org/pavel-kirienko/o1heap.svg?branch=master)](https://travis-ci.org/pavel-kirienko/o1heap)
-[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=pavel-kirienko_o1heap&metric=coverage)](https://sonarcloud.io/dashboard?id=pavel-kirienko_o1heap)
 [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=pavel-kirienko_o1heap&metric=reliability_rating)](https://sonarcloud.io/dashboard?id=pavel-kirienko_o1heap)
 
 O1heap is a highly deterministic constant-complexity memory allocator designed for
@@ -159,10 +159,6 @@ No special compiler options are needed to compile the source file (if you find t
 
 Dedicate a memory arena for the heap, and pass a pointer to it along with its size to the initialization function
 `o1heapInit(..)`.
-In the case of concurrent environments, also pass pointers to the synchronization locking/unlocking functions
--- they will be invoked by the library to facilitate atomic transactions.
-Alternatively, some applications (where possible) might benefit from using a separate heap per thread to avoid
-the synchronization overhead and reduce contention.
 
 Allocate and deallocate memory using `o1heapAllocate(..)` and `o1heapFree(..)`.
 Their semantics are compatible with `malloc(..)` and `free(..)` plus additional behavioral guarantees
@@ -170,6 +166,8 @@ Their semantics are compatible with `malloc(..)` and `free(..)` plus additional 
 
 If necessary, periodically invoke `o1heapDoInvariantsHold(..)` to ensure that the heap is functioning correctly
 and its internal data structures are not damaged.
+
+Avoid concurrent access to the heap. Use locking if necessary.
 
 ### Build configuration options
 

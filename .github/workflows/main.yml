@@ -40,7 +40,6 @@ jobs:
         run: make test
 
   sonarcloud:
-    if: endsWith(github.base_ref, 'master') || endsWith(github.ref, 'master')
     runs-on: ubuntu-latest
     env:
       SONAR_SCANNER_VERSION: 4.6.1.2450
@@ -87,14 +86,16 @@ jobs:
         unzip -o $HOME/.sonar/build-wrapper-linux-x86.zip -d $HOME/.sonar/
         echo "$HOME/.sonar/build-wrapper-linux-x86" >> $GITHUB_PATH
 
+    # Pass NDEBUG to exclude assert() from coverage; see https://github.com/pavel-kirienko/o1heap/issues/9
     - name: Run build-wrapper
       run: |
-        cmake tests -DCMAKE_BUILD_TYPE=Debug -DNO_STATIC_ANALYSIS=1
+        cmake tests -DCMAKE_BUILD_TYPE=Debug -DNO_STATIC_ANALYSIS=1 -DCMAKE_C_FLAGS='-DNDEBUG=1'
         build-wrapper-linux-x86-64 --out-dir ${{ env.BUILD_WRAPPER_OUT_DIR }} make all
         make test
         gcov --preserve-paths --long-file-names $(find CMakeFiles/test_general_cov.dir -name '*.gcno')
         gcov --preserve-paths --long-file-names $(find CMakeFiles/test_private_cov.dir -name '*.gcno')
 
+    # https://community.sonarsource.com/t/analyzing-a-header-only-c-library/51468
     - name: Run sonar-scanner
       run: >
         sonar-scanner
@@ -105,9 +106,10 @@ jobs:
         --define sonar.cfamily.gcov.reportsPath="."
         --define sonar.cfamily.build-wrapper-output="${{ env.BUILD_WRAPPER_OUT_DIR }}"
         --define sonar.cfamily.cache.enabled="false"
-        --define sonar.cfamily.threads=1
+        --define sonar.cfamily.threads=2
         --define sonar.host.url="${{ env.SONAR_SERVER_URL }}"
         --define sonar.login=${{ secrets.SONAR_TOKEN }}
+        $([ -z "$GITHUB_BASE_REF" ] && echo "--define sonar.branch.name=${GITHUB_REF##*/}" || true)
 
   style_check:
     runs-on: ubuntu-latest
