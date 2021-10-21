@@ -40,7 +40,6 @@ jobs:
         run: make test
 
   sonarcloud:
-    if: endsWith(github.base_ref, 'master') || endsWith(github.ref, 'master')
     runs-on: ubuntu-latest
     env:
       SONAR_SCANNER_VERSION: 4.6.1.2450
