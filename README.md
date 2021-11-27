@@ -19,7 +19,6 @@ due to the fact that a memory allocator has to rely on inherently unsafe operati
 The codebase is extremely compact (<500 LoC) and is therefore trivial to validate.
 
 The allocator is designed to be portable across all conventional architectures, from 8-bit to 64-bit systems.
-Multi-threaded environments are supported with the help of external synchronization hooks provided by the application.
 
 ## Design
 
