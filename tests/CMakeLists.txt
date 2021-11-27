@@ -78,14 +78,16 @@ function(gen_test name files compile_definitions compile_features compile_flags 
     add_test("run_${name}" "${name}" --rng-seed time)
 endfunction()
 
-function(gen_test_matrix name files compile_definitions)
-    gen_test("${name}_c99_x64" "${files}" "${compile_definitions}" c_std_99 "-m64" "-m64")
-    gen_test("${name}_c99_x32" "${files}" "${compile_definitions}" c_std_99 "-m32" "-m32")
-    gen_test("${name}_c11_x64" "${files}" "${compile_definitions}" c_std_11 "-m64" "-m64")
-    gen_test("${name}_c11_x32" "${files}" "${compile_definitions}" c_std_11 "-m32" "-m32")
+function(gen_test_matrix name files defs)
+    gen_test("${name}_c99_x64"      "${files}" "${defs}"                            c_std_99 "-m64" "-m64")
+    gen_test("${name}_c99_x32"      "${files}" "${defs}"                            c_std_99 "-m32" "-m32")
+    gen_test("${name}_c11_x64"      "${files}" "${defs}"                            c_std_11 "-m64" "-m64")
+    gen_test("${name}_c11_x32"      "${files}" "${defs}"                            c_std_11 "-m32" "-m32")
+    gen_test("${name}_c11_x64_ni"   "${files}" "${defs};O1HEAP_USE_INTRINSICS=0"    c_std_11 "-m64" "-m64")
+    gen_test("${name}_c11_x32_ni"   "${files}" "${defs};O1HEAP_USE_INTRINSICS=0"    c_std_11 "-m32" "-m32")
     # Coverage is only available for GCC builds.
     if ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") AND (CMAKE_BUILD_TYPE STREQUAL "Debug"))
-        gen_test("${name}_cov" "${files}" "${compile_definitions}" c_std_11 "-g -O0 --coverage" "--coverage")
+        gen_test("${name}_cov" "${files}" "${defs}" c_std_11 "-g -O0 --coverage" "--coverage")
     endif ()
 endfunction()
 

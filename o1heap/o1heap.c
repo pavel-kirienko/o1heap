@@ -16,6 +16,7 @@
 
 #include "o1heap.h"
 #include <assert.h>
+#include <limits.h>
 
 // ---------------------------------------- BUILD CONFIGURATION OPTIONS ----------------------------------------
 
@@ -32,19 +33,50 @@
 #    define O1HEAP_ASSERT(x) assert(x)  // NOSONAR
 #endif
 
+/// Allow usage of compiler intrinsics for branch annotation and CLZ.
+#ifndef O1HEAP_USE_INTRINSICS
+#    define O1HEAP_USE_INTRINSICS 1
+#endif
+
 /// Branch probability annotations are used to improve the worst case execution time (WCET). They are entirely optional.
-#ifndef O1HEAP_LIKELY
+#if O1HEAP_USE_INTRINSICS && !defined(O1HEAP_LIKELY)
 #    if defined(__GNUC__) || defined(__clang__) || defined(__CC_ARM)
 // Intentional violation of MISRA: branch hinting macro cannot be replaced with a function definition.
 #        define O1HEAP_LIKELY(x) __builtin_expect((x), 1)  // NOSONAR
-#    else
-#        define O1HEAP_LIKELY(x) x
 #    endif
+#endif
+#ifndef O1HEAP_LIKELY
+#    define O1HEAP_LIKELY(x) x
 #endif
 
 /// This option is used for testing only. Do not use in production.
 #ifndef O1HEAP_PRIVATE
 #    define O1HEAP_PRIVATE static inline
+#endif
+
+/// Count leading zeros (CLZ) is used for fast computation of binary logarithm (which needs to be done very often).
+/// Most of the modern processors (including the embedded ones) implement dedicated hardware support for fast CLZ
+/// computation, which is available via compiler intrinsics. The default implementation will automatically use
+/// the intrinsics for some of the compilers; for others it will default to the slow software emulation,
+/// which can be overridden by the user via O1HEAP_CONFIG_HEADER. The library guarantees that the argument is positive.
+#if O1HEAP_USE_INTRINSICS && !defined(O1HEAP_CLZ)
+#    if defined(__GNUC__) || defined(__clang__) || defined(__CC_ARM)
+#        define O1HEAP_CLZ __builtin_clzl
+#    endif
+#endif
+#ifndef O1HEAP_CLZ
+O1HEAP_PRIVATE uint_fast8_t O1HEAP_CLZ(const size_t x)
+{
+    O1HEAP_ASSERT(x > 0);
+    size_t       t = ((size_t) 1U) << ((sizeof(size_t) * CHAR_BIT) - 1U);
+    uint_fast8_t r = 0;
+    while ((x & t) == 0)
+    {
+        t >>= 1U;
+        r++;
+    }
+    return r;
+}
 #endif
 
 // ---------------------------------------- INTERNAL DEFINITIONS ----------------------------------------
@@ -72,7 +104,7 @@
 
 /// Normally we should subtract log2(FRAGMENT_SIZE_MIN) but log2 is bulky to compute using the preprocessor only.
 /// We will certainly end up with unused bins this way, but it is cheap to ignore.
-#define NUM_BINS_MAX (sizeof(size_t) * 8U)
+#define NUM_BINS_MAX (sizeof(size_t) * CHAR_BIT)
 
 static_assert((O1HEAP_ALIGNMENT & (O1HEAP_ALIGNMENT - 1U)) == 0U, "Not a power of 2");
 static_assert((FRAGMENT_SIZE_MIN & (FRAGMENT_SIZE_MIN - 1U)) == 0U, "Not a power of 2");
@@ -113,39 +145,35 @@ struct O1HeapInstance
 static_assert(INSTANCE_SIZE_PADDED >= sizeof(O1HeapInstance), "Invalid instance footprint computation");
 static_assert((INSTANCE_SIZE_PADDED % O1HEAP_ALIGNMENT) == 0U, "Invalid instance footprint computation");
 
-/// True if the argument is an integer power of two or zero.
-O1HEAP_PRIVATE bool isPowerOf2(const size_t x)
+/// Undefined for zero argument.
+O1HEAP_PRIVATE uint_fast8_t log2Floor(const size_t x)
 {
-    return (x & (x - 1U)) == 0U;
+    O1HEAP_ASSERT(x > 0);
+    // NOLINTNEXTLINE redundant cast to the same type.
+    return (uint_fast8_t) (((sizeof(x) * CHAR_BIT) - 1U) - ((uint_fast8_t) O1HEAP_CLZ(x)));
 }
 
 /// Special case: if the argument is zero, returns zero.
-O1HEAP_PRIVATE uint8_t log2Floor(const size_t x)
+O1HEAP_PRIVATE uint_fast8_t log2Ceil(const size_t x)
 {
-    size_t  tmp = x;
-    uint8_t y   = 0;
-    // This is currently the only exception to the statement "routines contain neither loops nor recursion".
-    // It is unclear if there is a better way to compute the binary logarithm than this.
-    while (tmp > 1U)
-    {
-        tmp >>= 1U;
-        y++;
-    }
-    return y;
-}
-
-/// Special case: if the argument is zero, returns zero.
-O1HEAP_PRIVATE uint8_t log2Ceil(const size_t x)
-{
-    return (uint8_t) (log2Floor(x) + (isPowerOf2(x) ? 0U : 1U));
+    // NOLINTNEXTLINE redundant cast to the same type.
+    return (x <= 1U) ? 0U : (uint_fast8_t) ((sizeof(x) * CHAR_BIT) - ((uint_fast8_t) O1HEAP_CLZ(x - 1U)));
 }
 
 /// Raise 2 into the specified power.
 /// You might be tempted to do something like (1U << power). WRONG! We humans are prone to forgetting things.
 /// If you forget to cast your 1U to size_t or ULL, you may end up with undefined behavior.
-O1HEAP_PRIVATE size_t pow2(const uint8_t power)
+O1HEAP_PRIVATE size_t pow2(const uint_fast8_t power)
 {
     return ((size_t) 1U) << power;
+}
+
+/// This is equivalent to pow2(log2Ceil(x)). Undefined for x<2.
+O1HEAP_PRIVATE size_t roundUpToPowerOf2(const size_t x)
+{
+    O1HEAP_ASSERT(x >= 2U);
+    // NOLINTNEXTLINE redundant cast to the same type.
+    return ((size_t) 1U) << ((sizeof(x) * CHAR_BIT) - ((uint_fast8_t) O1HEAP_CLZ(x - 1U)));
 }
 
 /// Links two fragments so that their next/prev pointers point to each other; left goes before right.
@@ -168,7 +196,7 @@ O1HEAP_PRIVATE void rebin(O1HeapInstance* const handle, Fragment* const fragment
     O1HEAP_ASSERT(fragment != NULL);
     O1HEAP_ASSERT(fragment->header.size >= FRAGMENT_SIZE_MIN);
     O1HEAP_ASSERT((fragment->header.size % FRAGMENT_SIZE_MIN) == 0U);
-    const uint8_t idx = log2Floor(fragment->header.size / FRAGMENT_SIZE_MIN);  // Round DOWN when inserting.
+    const uint_fast8_t idx = log2Floor(fragment->header.size / FRAGMENT_SIZE_MIN);  // Round DOWN when inserting.
     O1HEAP_ASSERT(idx < NUM_BINS_MAX);
     // Add the new fragment to the beginning of the bin list.
     // I.e., each allocation will be returning the most-recently-used fragment -- good for caching.
@@ -189,7 +217,7 @@ O1HEAP_PRIVATE void unbin(O1HeapInstance* const handle, const Fragment* const fr
     O1HEAP_ASSERT(fragment != NULL);
     O1HEAP_ASSERT(fragment->header.size >= FRAGMENT_SIZE_MIN);
     O1HEAP_ASSERT((fragment->header.size % FRAGMENT_SIZE_MIN) == 0U);
-    const uint8_t idx = log2Floor(fragment->header.size / FRAGMENT_SIZE_MIN);  // Round DOWN when removing.
+    const uint_fast8_t idx = log2Floor(fragment->header.size / FRAGMENT_SIZE_MIN);  // Round DOWN when removing.
     O1HEAP_ASSERT(idx < NUM_BINS_MAX);
     // Remove the bin from the free fragment list.
     if (O1HEAP_LIKELY(fragment->next_free != NULL))
@@ -244,7 +272,7 @@ O1HeapInstance* o1heapInit(void* const base, const size_t size)
         O1HEAP_ASSERT((capacity >= FRAGMENT_SIZE_MIN) && (capacity <= FRAGMENT_SIZE_MAX));
 
         // Initialize the root fragment.
-        Fragment* const frag = (Fragment*) (void*) (((uint8_t*) base) + INSTANCE_SIZE_PADDED);
+        Fragment* const frag = (Fragment*) (void*) (((char*) base) + INSTANCE_SIZE_PADDED);
         O1HEAP_ASSERT((((size_t) frag) % O1HEAP_ALIGNMENT) == 0U);
         frag->header.next = NULL;
         frag->header.prev = NULL;
@@ -279,13 +307,13 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
     {
         // Add the header size and align the allocation size to the power of 2.
         // See "Timing-Predictable Memory Allocation In Hard Real-Time Systems", Herter, page 27.
-        const size_t fragment_size = pow2(log2Ceil(amount + O1HEAP_ALIGNMENT));
+        const size_t fragment_size = roundUpToPowerOf2(amount + O1HEAP_ALIGNMENT);
         O1HEAP_ASSERT(fragment_size <= FRAGMENT_SIZE_MAX);
         O1HEAP_ASSERT(fragment_size >= FRAGMENT_SIZE_MIN);
         O1HEAP_ASSERT(fragment_size >= amount + O1HEAP_ALIGNMENT);
-        O1HEAP_ASSERT(isPowerOf2(fragment_size));
+        O1HEAP_ASSERT((fragment_size & (fragment_size - 1U)) == 0U);  // Is power of 2.
 
-        const uint8_t optimal_bin_index = log2Ceil(fragment_size / FRAGMENT_SIZE_MIN);  // Use CEIL when fetching.
+        const uint_fast8_t optimal_bin_index = log2Ceil(fragment_size / FRAGMENT_SIZE_MIN);  // Use CEIL when fetching.
         O1HEAP_ASSERT(optimal_bin_index < NUM_BINS_MAX);
         const size_t candidate_bin_mask = ~(pow2(optimal_bin_index) - 1U);
 
@@ -294,8 +322,8 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
         const size_t smallest_bin_mask = suitable_bins & ~(suitable_bins - 1U);  // Clear all bits but the lowest.
         if (O1HEAP_LIKELY(smallest_bin_mask != 0))
         {
-            O1HEAP_ASSERT(isPowerOf2(smallest_bin_mask));
-            const uint8_t bin_index = log2Floor(smallest_bin_mask);
+            O1HEAP_ASSERT((smallest_bin_mask & (smallest_bin_mask - 1U)) == 0U);  // Is power of 2.
+            const uint_fast8_t bin_index = log2Floor(smallest_bin_mask);
             O1HEAP_ASSERT(bin_index >= optimal_bin_index);
             O1HEAP_ASSERT(bin_index < NUM_BINS_MAX);
 
@@ -314,7 +342,7 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
             O1HEAP_ASSERT(leftover % FRAGMENT_SIZE_MIN == 0U);       // Alignment check.
             if (O1HEAP_LIKELY(leftover >= FRAGMENT_SIZE_MIN))
             {
-                Fragment* const new_frag = (Fragment*) (void*) (((uint8_t*) frag) + fragment_size);
+                Fragment* const new_frag = (Fragment*) (void*) (((char*) frag) + fragment_size);
                 O1HEAP_ASSERT(((size_t) new_frag) % O1HEAP_ALIGNMENT == 0U);
                 new_frag->header.size = leftover;
                 new_frag->header.used = false;
@@ -336,7 +364,7 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
             O1HEAP_ASSERT(frag->header.size >= amount + O1HEAP_ALIGNMENT);
             frag->header.used = true;
 
-            out = ((uint8_t*) frag) + O1HEAP_ALIGNMENT;
+            out = ((char*) frag) + O1HEAP_ALIGNMENT;
         }
     }
 
@@ -359,7 +387,7 @@ void o1heapFree(O1HeapInstance* const handle, void* const pointer)
     O1HEAP_ASSERT(handle->diagnostics.capacity <= FRAGMENT_SIZE_MAX);
     if (O1HEAP_LIKELY(pointer != NULL))  // NULL pointer is a no-op.
     {
-        Fragment* const frag = (Fragment*) (void*) (((uint8_t*) pointer) - O1HEAP_ALIGNMENT);
+        Fragment* const frag = (Fragment*) (void*) (((char*) pointer) - O1HEAP_ALIGNMENT);
 
         // Check for heap corruption in debug builds.
         O1HEAP_ASSERT(((size_t) frag) % sizeof(Fragment*) == 0U);
@@ -429,7 +457,7 @@ bool o1heapDoInvariantsHold(const O1HeapInstance* const handle)
     // Check the bin mask consistency.
     for (size_t i = 0; i < NUM_BINS_MAX; i++)  // Dear compiler, feel free to unroll this loop.
     {
-        const bool mask_bit_set = (handle->nonempty_bin_mask & pow2((uint8_t) i)) != 0U;
+        const bool mask_bit_set = (handle->nonempty_bin_mask & pow2((uint_fast8_t) i)) != 0U;
         const bool bin_nonempty = handle->bins[i] != NULL;
         valid                   = valid && (mask_bit_set == bin_nonempty);
     }

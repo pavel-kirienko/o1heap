@@ -19,7 +19,6 @@ due to the fact that a memory allocator has to rely on inherently unsafe operati
 The codebase is extremely compact (<500 LoC) and is therefore trivial to validate.
 
 The allocator is designed to be portable across all conventional architectures, from 8-bit to 64-bit systems.
-Multi-threaded environments are supported with the help of external synchronization hooks provided by the application.
 
 ## Design
 
@@ -199,6 +198,18 @@ If not specified, the macro expands as follows:
   For example, for GCC, Clang, and ARM Compiler, it expands into `__builtin_expect((x), 1)`.
 - For other (unknown) compilers it expands into the original expression with no modifications: `(x)`.
 
+#### O1HEAP_CLZ(x)
+
+The count leading zeros (CLZ) function is used for fast binary logarithm computation (which has to be done
+multiple times per allocation, so its performance is critical).
+Most of the modern processors implement dedicated hardware support for fast CLZ computation,
+which is available via compiler intrinsics.
+
+If not overridden by the user, for some compilers `O1HEAP_CLZ(x)` will expand to the appropriate intrinsic
+(e.g., `__builtin_clzl(x)` for GCC/Clang).
+For other compilers it will default to a slow software implementation,
+which is likely to significantly degrade the performance of the library.
+
 ## Development
 
 ### Dependencies
@@ -256,6 +267,13 @@ An exception applies for the case of false-positive (invalid) warnings -- those 
 - *[Russian]* [Динамическая память в системах жёсткого реального времени](https://habr.com/ru/post/486650/) -- issues with dynamic memory allocation in modern embedded RTOS and related popular misconceptions.
 
 ## Changelog
+
+### v2.1
+
+- Significantly accelerate (de-)allocation by replacing the naïve log2 implementation with fast CLZ intrinsics;
+  see `O1HEAP_CLZ(x)`.
+- Do not require char to be 8-bit wide: replace `uint8_t` with `uint_fast8_t`.
+  This is to enhance compatibility with odd embedded platforms where `CHAR_BIT!=8` (e.g., ADSP TS-201, TMS320C2804).
 
 ### v2.0
 

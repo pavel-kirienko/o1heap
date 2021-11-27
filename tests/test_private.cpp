@@ -16,26 +16,11 @@
 
 #include "internal.hpp"
 
-TEST_CASE("Private: isPowerOf2")
-{
-    using internal::isPowerOf2;
-    REQUIRE(isPowerOf2(0));  // Special case.
-    REQUIRE(isPowerOf2(1));  // 2**0
-    REQUIRE(isPowerOf2(2));  // 2**1
-    REQUIRE(!isPowerOf2(3));
-    REQUIRE(isPowerOf2(4));
-    REQUIRE(!isPowerOf2(5));
-    REQUIRE(!isPowerOf2(6));
-    REQUIRE(!isPowerOf2(7));
-    REQUIRE(isPowerOf2(8));
-    REQUIRE(!isPowerOf2(9));
-}
-
 TEST_CASE("Private: log2")
 {
     using internal::log2Floor;
     using internal::log2Ceil;
-    REQUIRE(log2Floor(0) == 0);
+    // The function is only defined for x>=1.
     REQUIRE(log2Floor(1) == 0);
     REQUIRE(log2Floor(2) == 1);
     REQUIRE(log2Floor(3) == 1);
@@ -44,7 +29,7 @@ TEST_CASE("Private: log2")
     REQUIRE(log2Floor(60) == 5);
     REQUIRE(log2Floor(64) == 6);
 
-    REQUIRE(log2Ceil(0) == 0);
+    REQUIRE(log2Ceil(0) == 0);  // Special case.
     REQUIRE(log2Ceil(1) == 0);
     REQUIRE(log2Ceil(2) == 1);
     REQUIRE(log2Ceil(3) == 2);
@@ -67,4 +52,35 @@ TEST_CASE("Private: pow2")
     REQUIRE(pow2(7) == 128);
     REQUIRE(pow2(8) == 256);
     REQUIRE(pow2(9) == 512);
+}
+
+TEST_CASE("Private: roundUpToPowerOf2")
+{
+    using internal::log2Ceil;
+    using internal::pow2;
+    using internal::roundUpToPowerOf2;
+    // The function is only defined for x>=2.
+    REQUIRE(roundUpToPowerOf2(2) == 2);
+    REQUIRE(roundUpToPowerOf2(3) == 4);
+    REQUIRE(roundUpToPowerOf2(4) == 4);
+    REQUIRE(roundUpToPowerOf2(5) == 8);
+    REQUIRE(roundUpToPowerOf2(6) == 8);
+    REQUIRE(roundUpToPowerOf2(7) == 8);
+    REQUIRE(roundUpToPowerOf2(8) == 8);
+    REQUIRE(roundUpToPowerOf2(9) == 16);
+    REQUIRE(roundUpToPowerOf2(10) == 16);
+    REQUIRE(roundUpToPowerOf2(11) == 16);
+    REQUIRE(roundUpToPowerOf2(12) == 16);
+    REQUIRE(roundUpToPowerOf2(13) == 16);
+    REQUIRE(roundUpToPowerOf2(14) == 16);
+    REQUIRE(roundUpToPowerOf2(15) == 16);
+    REQUIRE(roundUpToPowerOf2(16) == 16);
+    REQUIRE(roundUpToPowerOf2(17) == 32);
+    REQUIRE(roundUpToPowerOf2(32) == 32);
+    REQUIRE(roundUpToPowerOf2(2147483647U) == 2147483648U);
+    REQUIRE(roundUpToPowerOf2(2147483648U) == 2147483648U);
+    for (auto i = 2U; i < 1'000'000; i++)
+    {
+        REQUIRE(pow2(log2Ceil(i)) == roundUpToPowerOf2(i));
+    }
 }
