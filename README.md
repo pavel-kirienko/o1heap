@@ -163,12 +163,11 @@ The total amount of space needed to accommodate the per-fragment overhead is $k\
 Then, the total WCMC, expressed in bytes, is:
 
 $$
-H_b(M,n,l,a) = a \ k + \frac{ 2 \ l \ n \ M_f \ (\lceil{} log_2 n_f \rceil{} + 1) }{ l+n }
+H_b(M,n,l,a) = a \ k + \frac{ 2 \ l \ n \ M_f \ (\lceil{} log_2 \ n_f \rceil{} + 1) }{ l+n }
 $$
 
 **The above equation should be used for sizing the heap space.**
 Observe that the case of $l=n$ degenerates to the standard fixed-size block allocator.
-Increasing $l$ lowers the upper bound because larger fragments inherently reduce the fragmentation.
 
 The following illustration shows the worst-case memory consumption (WCMC) for some common memory sizes;
 as explained above, $l$ is chosen by the application designer freely,
