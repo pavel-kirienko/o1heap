@@ -209,8 +209,8 @@ This is useful because some build systems do not allow passing function-like mac
 #### O1HEAP_ASSERT(x)
 
 The macro `O1HEAP_ASSERT(x)` can be defined to customize the assertion handling or to disable it.
-To disable assertion checks, the macro should expand into `(void)(x)`.
-If not specified, the macro expands into the standard assertion check macro `assert(x)` as defined in `<assert.h>`.
+To disable assertion checks, the macro should expand to `(void)(x)`.
+If not specified, the macro expands to the standard assertion check macro `assert(x)` as defined in `<assert.h>`.
 
 #### O1HEAP_LIKELY(x)
 
@@ -218,13 +218,13 @@ Some of the conditional branching statements are equipped with this annotation t
 the generated code should be optimized for the case where the corresponding branch is taken.
 This is done to reduce the worst-case execution time.
 
-The macro should expand into a compiler-specific branch weighting intrinsic,
-or into the original expression `(x)` if no such hinting is desired.
+The macro should expand to a compiler-specific branch weighting intrinsic,
+or to the original expression `(x)` if no such hinting is desired.
 If not specified, the macro expands as follows:
 
-- For some well-known compilers the macro automatically expands into appropriate branch weighting intrinsics.
-  For example, for GCC, Clang, and ARM Compiler, it expands into `__builtin_expect((x), 1)`.
-- For other (unknown) compilers it expands into the original expression with no modifications: `(x)`.
+- For some well-known compilers the macro automatically expands to appropriate branch weighting intrinsics.
+  For example, for GCC, Clang, and ARM Compiler, it expands to `__builtin_expect((x), 1)`.
+- For other (unknown) compilers it expands to the original expression with no modifications: `(x)`.
 
 #### O1HEAP_CLZ(x)
 
