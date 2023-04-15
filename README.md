@@ -28,7 +28,7 @@ The core objective of this library is to provide a dynamic memory allocator that
 
 - Memory allocation and deallocation routines are constant-time.
 
-- For a given peak memory requirement *M*, the worst-case memory consumption *H* is easily and robustly predictable
+- For a given peak memory requirement $M$, the worst-case memory consumption $H$ is predictable
   (i.e., the worst-case heap fragmentation is well-characterized).
   The application designer shall be able to easily predict the amount of memory that needs to be provided to the
   memory allocator to ensure that out-of-memory (OOM) failures provably cannot occur at runtime
@@ -58,110 +58,121 @@ and/or by relying on more sophisticated algorithms, this implementation chooses 
 where no assumptions are made about the application and the codebase is kept simple to facilitate its integration
 into verified and validated high-integrity software.
 
-The library implements a modified Half-Fit algorithm -- a constant-complexity strategy originally proposed by Ogasawara.
+The library implements a modified half-fit algorithm -- a constant-complexity strategy originally proposed by Ogasawara.
 In this implementation, memory is allocated in fragments whose size is rounded up to the next integer power of two.
-The worst-case memory consumption (WCMC) *H* of this allocation strategy has been shown to be:
+The worst-case memory consumption (WCMC) $H$ of this allocation strategy has been shown to be:
 
-H(M,n) = 2 M (1 + ⌈log<sub>2</sub> n⌉)
+$$
+H(M,n) = 2 M (1 + \lceil{} \log_2 n \rceil{})
+$$
 
-Where *M* is the peak total memory requirement of the application
+Where $M$ is the peak total memory requirement of the application
 (i.e., sum of sizes of all allocated fragments when the heap memory utilization is at its peak)
-and *n* is the maximum contiguous fragment that can be requested by the application.
+and $n$ is the maximum contiguous fragment that can be requested by the application.
 The provided equation is a generalized case that does not explicitly take into account
 a possible per-fragment metadata allocation overhead.
 
-The ***two-level segregated fit*** (TLSF) algorithm is a more complex $O(1)$ algorithm similar to Half-Fit
-that is often found in real-time applications.
-While TLSF provides a better average-case memory fragmentation due to its more sophisticated approach to
-heap segmentation,
-its worst-case fragmentation bound is higher than that of Half-Fit (for practically useful heap sizes)
-and is the same as for an ordinary best-fit allocator,
-being approximately $H = M \, (n-2)$.
-Due to its increased internal complexity, TLSF offers a somewhat higher (albeit still constant) WCET
-and requires a larger number of lines of code to implement.
-From this it is possible to conclude that Half-Fit can be considered a superior choice for high-integrity applications
-compared to TLSF.
-
-| Allocation strategy | WCMC                              |
-|---------------------|-----------------------------------|
-| First-fit           | $H \approx M \, (1 + \log_2 n)$   |
-| Best-fit            | $H \approx M \, (n - 2)$          |
-| Half-fit            | $H \approx 2 M \, (1 + \log_2 n)$ |
-| TLSF                | (see best-fit)                    |
-
-The state of *catastrophic fragmentation* is a state where the allocator is unable to serve
-a memory allocation request even if there is enough free memory due to its suboptimal arrangement.
-By definition, if the amount of memory available to the allocator is not less than *H*, then the state of
-catastrophic fragmentation cannot occur.
-
-Memory allocators used in general-purpose (non-real-time) applications often leverage a different class of algorithms
+Memory allocators used in general-purpose (non-real-time and/or non-high-integrity)
+applications often leverage a different class of algorithms
 which may feature poorer worst-case performance metrics but perform (much) better on average.
 For a hard real-time system, the average case performance is generally less relevant,
 so it can be excluded from analysis.
 
+The ***two-level segregated fit*** (TLSF) algorithm is a more complex $O(1)$ algorithm similar to half-fit
+that is often found in real-time applications.
+While TLSF provides a better average-case memory fragmentation due to its more sophisticated approach to
+heap segmentation,
+its worst-case fragmentation bound is often higher than that of half-fit (for practically useful heap parameters)
+and is the same as for an ordinary best-fit allocator,
+being approximately $H = M (n-2)$.
+Due to its increased internal complexity, TLSF offers a somewhat higher (albeit still constant) WCET
+and requires a larger number of lines of code to implement.
+From this it is possible to conclude that half-fit can be considered a superior choice for high-integrity applications
+compared to TLSF.
+
+| Allocation strategy | WCMC                                       |
+|---------------------|--------------------------------------------|
+| First-fit           | $H =   M (1 + \lceil{} \log_2 n \rceil{})$ |
+| Half-fit            | $H = 2 M (1 + \lceil{} \log_2 n \rceil{})$ |
+| Best-fit            | $H =   M (n - 2)$                          |
+| TLSF                | (see best-fit)                             |
+
+The state of *catastrophic fragmentation* is a state where the allocator is unable to serve
+a memory allocation request even if there is enough free memory due to its suboptimal arrangement.
+By definition, if the amount of memory available to the allocator is not less than $H$, then the state of
+catastrophic fragmentation cannot occur.
+
 The above-defined theoretical worst-case upper bound H may be prohibitively high for some
 memory-constrained applications.
 It has been shown [Robson 1975] that under a typical workload,
-for a sufficiently high amount of memory available to the allocator which is less than *H*,
+for a sufficiently high amount of memory available to the allocator which is less than $H$,
 the probability of a (de-)allocation sequence that results in catastrophic fragmentation is low.
 When combined with an acceptable failure probability and a set of adequate assumptions about the behaviors of
-the application, this property may allow the designer to drastically reduce the amount of memory dedicated to
+the application, this property may allow the designer to reduce the amount of memory dedicated to
 the heap while ensuring a sufficient degree of predictability and reliability.
 The methods of such optimization are outside the scope of this document;
 interested readers are advised to consult with the referred publications.
 
-Following some of the ideas expressed in the discussion about memory caching in real-time systems in [Herter 2014],
-this implementation takes caching-related issues into consideration.
-The Half-Fit algorithm itself is inherently optimized to minimize the number of random memory accesses.
-Furthermore, the allocation strategy favors most recently used memory fragments
-to minimize cache misses in the application.
+Following some of the ideas from [Herter 2014], this implementation takes caching-related issues into consideration
+by choosing the most recently used memory fragments to minimize cache misses in the application.
 
 ### Implementation
 
-The implemented variant of Half-Fit allocates memory in fragments of size:
+The implemented variant of half-fit allocates memory in fragments of size:
 
-F(r) = 2<sup>⌈log<sub>2</sub>(r+a)⌉</sup>
+$$
+F(r) = 2^{\lceil{} log_2 (r+a) \rceil{}}
+$$
 
-Where *r>0* is the requested allocation size and *a* is the fixed per-allocation metadata overhead
+Where $r>0$ is the requested allocation size and $a$ is the fixed per-allocation metadata overhead
 implicitly introduced by the allocator for memory management needs.
-The size of the overhead *a* is represented in the codebase as `O1HEAP_ALIGNMENT`,
+The size of the overhead $a$ is represented in the codebase as `O1HEAP_ALIGNMENT`,
 because it also dictates the allocated memory pointer alignment.
-Due to the overhead, the maximum amount of memory available to the application per allocation is F'(r) = F(r) - a.
+Due to the overhead, the maximum amount of memory available to the application per allocation is
+$F^\prime{}(r) = F(r) - a$.
 The amount of the overhead per allocation and, therefore, pointer alignment is 4×(pointer width);
 e.g., for a 32-bit platform, the overhead/alignment is 16 bytes (128 bits).
 
-From the above follows that *F(r) ≥ 2 a*.
-Remember that *r>0* -- following the semantics of `malloc(..)`,
+From the above follows that $F(r) \ge 2 a$.
+Remember that $r>0$ -- following the semantics of `malloc(..)`,
 the allocator returns a null pointer if a zero-sized allocation is requested.
 
-It has been mentioned that the abstract definition of *H* does not take into account the
+It has been mentioned that the abstract definition of $H$ does not take into account the
 implementation-specific overheads.
 Said overheads should be considered when calculating the amount memory needed for a specific application.
 We define a refined worst-case memory consumption (WCMC) model below.
 
-nf = ⌈n/l⌉
+$$
+n_f = \lceil{} \frac{n}{l} \rceil{}
+$$
 
-Mf = ⌈M/l⌉
+$$
+M_f = \lceil{} \frac{M}{l} \rceil{}
+$$
 
-k = Mf - nf + 1
+$$
+k = M_f - n_f + 1
+$$
 
-Where *l* -- the smallest amount of memory that may be requested by the application;
-*nf* -- the size of the largest allocation expressed as the number of min-size fragments;
-*Mf* -- the total amount of heap space that may be requested by the application in min-size fragments;
-*k* -- the maximum number of fragments.
-The worst case number of min-size memory fragments required is *Hf(Mf,nf) = H(Mf,nf)*.
-The total amount of space needed to accommodate the per-fragment overhead is *(k×a)*.
+Where $l$ -- the smallest amount of memory that may be requested by the application;
+$n_f$ -- the size of the largest allocation expressed as the number of min-size fragments;
+$M_f$ -- the total amount of heap space that may be requested by the application in min-size fragments;
+$k$ -- the maximum number of fragments.
+The worst case number of min-size memory fragments required is $H_f(M_f,n_f) = H(M_f,n_f)$.
+The total amount of space needed to accommodate the per-fragment overhead is $k\times{}a$.
 Then, the total WCMC, expressed in bytes, is:
 
-Hb(M,n,l,a) = a k + (2 l n Mf (⌈log<sub>2</sub>nf⌉ + 1)) / (l+n)
+$$
+H_b(M,n,l,a) = a k + \frac{ 2 l n M_f (\lceil{} log_2 n_f \rceil{} + 1) }{ l+n }
+$$
 
 **The above equation should be used for sizing the heap space.**
-Observe that the case where *l=n* degenerates into the standard fixed-size block allocator.
-Increase of *l* lowers the upper bound because larger fragments inherently reduce the fragmentation.
+Observe that the case of $l=n$ degenerates to the standard fixed-size block allocator.
+Increasing $l$ lowers the upper bound because larger fragments inherently reduce the fragmentation.
 
 The following illustration shows the worst-case memory consumption (WCMC) for some common memory sizes;
-as explained above, *l* is chosen by the application designer freely,
-and *a* is the value of `O1HEAP_ALIGNMENT` which is platform-dependent:
+as explained above, $l$ is chosen by the application designer freely,
+and $a$ is the value of `O1HEAP_ALIGNMENT` which is platform-dependent:
 
 ![WCMC](docs/H.png "Total worst-case memory consumption (H) as a function of max fragment size (n) and total memory need (M)")
 
