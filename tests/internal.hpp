@@ -130,11 +130,11 @@ struct Fragment final
         }
     }
 
-    Fragment()                 = delete;
-    Fragment(const Fragment&)  = delete;
-    Fragment(const Fragment&&) = delete;
-    ~Fragment()                = delete;
-    auto operator=(const Fragment&) -> Fragment& = delete;
+    Fragment()                                    = delete;
+    Fragment(const Fragment&)                     = delete;
+    Fragment(const Fragment&&)                    = delete;
+    ~Fragment()                                   = delete;
+    auto operator=(const Fragment&) -> Fragment&  = delete;
     auto operator=(const Fragment&&) -> Fragment& = delete;
 };
 
@@ -257,11 +257,11 @@ struct O1HeapInstance final
         return buffer.str();
     }
 
-    O1HeapInstance()                       = delete;
-    O1HeapInstance(const O1HeapInstance&)  = delete;
-    O1HeapInstance(const O1HeapInstance&&) = delete;
-    ~O1HeapInstance()                      = delete;
-    auto operator=(const O1HeapInstance&) -> O1HeapInstance& = delete;
+    O1HeapInstance()                                          = delete;
+    O1HeapInstance(const O1HeapInstance&)                     = delete;
+    O1HeapInstance(const O1HeapInstance&&)                    = delete;
+    ~O1HeapInstance()                                         = delete;
+    auto operator=(const O1HeapInstance&) -> O1HeapInstance&  = delete;
     auto operator=(const O1HeapInstance&&) -> O1HeapInstance& = delete;
 
 private:
