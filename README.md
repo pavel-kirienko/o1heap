@@ -67,9 +67,27 @@ H(M,n) = 2 M (1 + ⌈log<sub>2</sub> n⌉)
 Where *M* is the peak total memory requirement of the application
 (i.e., sum of sizes of all allocated fragments when the heap memory utilization is at its peak)
 and *n* is the maximum contiguous fragment that can be requested by the application.
-
-Note that the provided equation is a generalized case that does not explicitly take into account
+The provided equation is a generalized case that does not explicitly take into account
 a possible per-fragment metadata allocation overhead.
+
+The ***two-level segregated fit*** (TLSF) algorithm is a more complex $O(1)$ algorithm similar to Half-Fit
+that is often found in real-time applications.
+While TLSF provides a better average-case memory fragmentation due to its more sophisticated approach to
+heap segmentation,
+its worst-case fragmentation bound is higher than that of Half-Fit (for practically useful heap sizes)
+and is the same as for an ordinary best-fit allocator,
+being approximately $H = M \, (n-2)$.
+Due to its increased internal complexity, TLSF offers a somewhat higher (albeit still constant) WCET
+and requires a larger number of lines of code to implement.
+From this it is possible to conclude that Half-Fit can be considered a superior choice for high-integrity applications
+compared to TLSF.
+
+| Allocation strategy | WCMC                              |
+|---------------------|-----------------------------------|
+| First-fit           | $H \approx M \, (1 + \log_2 n)$   |
+| Best-fit            | $H \approx M \, (n - 2)$          |
+| Half-fit            | $H \approx 2 M \, (1 + \log_2 n)$ |
+| TLSF                | (see best-fit)                    |
 
 The state of *catastrophic fragmentation* is a state where the allocator is unable to serve
 a memory allocation request even if there is enough free memory due to its suboptimal arrangement.
