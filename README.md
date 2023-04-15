@@ -63,7 +63,7 @@ In this implementation, memory is allocated in fragments whose size is rounded u
 The worst-case memory consumption (WCMC) $H$ of this allocation strategy has been shown to be:
 
 $$
-H(M,n) = 2 M (1 + \lceil{} \log_2 n \rceil{})
+H(M,n) = 2 \ M \ (1 + \lceil{} \log_2 n \rceil{})
 $$
 
 Where $M$ is the peak total memory requirement of the application
@@ -90,12 +90,12 @@ and requires a larger number of lines of code to implement.
 From this it is possible to conclude that half-fit can be considered a superior choice for high-integrity applications
 compared to TLSF.
 
-| Allocation strategy | WCMC                                       |
-|---------------------|--------------------------------------------|
-| First-fit           | $H =   M (1 + \lceil{} \log_2 n \rceil{})$ |
-| Half-fit            | $H = 2 M (1 + \lceil{} \log_2 n \rceil{})$ |
-| Best-fit            | $H =   M (n - 2)$                          |
-| TLSF                | (see best-fit)                             |
+| Allocation strategy | WCMC                                         |
+|---------------------|----------------------------------------------|
+| First-fit           | $H =   M \ (1 + \lceil{} \log_2 n \rceil{})$ |
+| Half-fit            | $H = 2 M \ (1 + \lceil{} \log_2 n \rceil{})$ |
+| Best-fit            | $H =   M \ (n - 2)$                          |
+| TLSF                | (see best-fit)                               |
 
 The state of *catastrophic fragmentation* is a state where the allocator is unable to serve
 a memory allocation request even if there is enough free memory due to its suboptimal arrangement.
@@ -163,7 +163,7 @@ The total amount of space needed to accommodate the per-fragment overhead is $k\
 Then, the total WCMC, expressed in bytes, is:
 
 $$
-H_b(M,n,l,a) = a k + \frac{ 2 l n M_f (\lceil{} log_2 n_f \rceil{} + 1) }{ l+n }
+H_b(M,n,l,a) = a \ k + \frac{ 2 \ l \ n \ M_f \ (\lceil{} log_2 n_f \rceil{} + 1) }{ l+n }
 $$
 
 **The above equation should be used for sizing the heap space.**
