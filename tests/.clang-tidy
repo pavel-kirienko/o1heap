@@ -26,6 +26,7 @@ Checks: >-
   -readability-magic-numbers,
   -readability-function-cognitive-complexity,
   -readability-qualified-auto,
+  -readability-identifier-length,
 WarningsAsErrors: '*'
 HeaderFilterRegex: 'internal.hpp'
 AnalyzeTemporaryDtors: false

@@ -1,14 +1,15 @@
 name: Main Workflow
-
 on: [push, pull_request]
-
+env:
+  LLVM_VERSION: 15
 jobs:
   test:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        toolchain: ['clang', 'gcc']
-        build_type: ['Debug', 'Release', 'MinSizeRel']
+        toolchain: [clang, gcc]
+        build_type: [Debug, Release, MinSizeRel]
         include:
           - toolchain: gcc
             c-compiler: gcc
@@ -17,32 +18,36 @@ jobs:
             c-compiler: clang
             cxx-compiler: clang++
     steps:
-      - uses: actions/checkout@v2
-
-      - name: Install Dependencies
-        run: sudo apt install gcc-multilib g++-multilib clang-tidy-12
-
-      - name: Configure CMake
-        run: >
+      - uses: actions/checkout@v3
+      - run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh $LLVM_VERSION
+          sudo apt update -y && sudo apt upgrade -y
+          sudo apt-get -y install gcc-multilib g++-multilib clang-tidy-$LLVM_VERSION
+          sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-$LLVM_VERSION 50
+          clang-tidy --version
+      - run: >
           cmake
           -B ${{ github.workspace }}/build
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
           -DCMAKE_C_COMPILER=${{ matrix.c-compiler }}
           -DCMAKE_CXX_COMPILER=${{ matrix.cxx-compiler }}
           tests
-
-      - name: Build
-        working-directory: ${{github.workspace}}/build
+      - working-directory: ${{github.workspace}}/build
         run: make VERBOSE=1
-
-      - name: Test
-        working-directory: ${{github.workspace}}/build
+      - working-directory: ${{github.workspace}}/build
         run: make test
 
   sonarcloud:
+    if: >
+      github.event_name == 'pull_request'                   ||
+      contains(github.ref, '/master')                       ||
+      contains(github.ref, '/release')                      ||
+      contains(github.event.head_commit.message, '#sonar')
     runs-on: ubuntu-latest
     env:
-      SONAR_SCANNER_VERSION: 4.6.1.2450
+      SONAR_SCANNER_VERSION: 4.8.0.2856
       SONAR_SERVER_URL: "https://sonarcloud.io"
       BUILD_WRAPPER_OUT_DIR: build_wrapper_output_directory
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -50,25 +55,19 @@ jobs:
       CC: gcc
       CXX: g++
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
       with:
         fetch-depth: 0
-
-    - name: Install Dependencies
-      run: sudo apt install g++ g++-multilib gcc-multilib
-
-    - name: Set up JDK 11
-      uses: actions/setup-java@v1
+    - run: sudo apt install g++ g++-multilib gcc-multilib
+    - uses: actions/setup-java@v3
       with:
         java-version: 11
-
-    - name: Cache SonarCloud packages
-      uses: actions/cache@v1
+        distribution: zulu
+    - uses: actions/cache@v1
       with:
         path: ~/.sonar/cache
         key: ${{ runner.os }}-sonar
         restore-keys: ${{ runner.os }}-sonar
-
     - name: Download and set up sonar-scanner
       env:
         SONAR_SCANNER_DOWNLOAD_URL: https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-${{ env.SONAR_SCANNER_VERSION }}-linux.zip
@@ -77,7 +76,6 @@ jobs:
         curl -sSLo $HOME/.sonar/sonar-scanner.zip ${{ env.SONAR_SCANNER_DOWNLOAD_URL }}
         unzip -o $HOME/.sonar/sonar-scanner.zip -d $HOME/.sonar/
         echo "$HOME/.sonar/sonar-scanner-${{ env.SONAR_SCANNER_VERSION }}-linux/bin" >> $GITHUB_PATH
-
     - name: Download and set up build-wrapper
       env:
         BUILD_WRAPPER_DOWNLOAD_URL: ${{ env.SONAR_SERVER_URL }}/static/cpp/build-wrapper-linux-x86.zip
@@ -85,7 +83,6 @@ jobs:
         curl -sSLo $HOME/.sonar/build-wrapper-linux-x86.zip ${{ env.BUILD_WRAPPER_DOWNLOAD_URL }}
         unzip -o $HOME/.sonar/build-wrapper-linux-x86.zip -d $HOME/.sonar/
         echo "$HOME/.sonar/build-wrapper-linux-x86" >> $GITHUB_PATH
-
     # Pass NDEBUG to exclude assert() from coverage; see https://github.com/pavel-kirienko/o1heap/issues/9
     - name: Run build-wrapper
       run: |
@@ -94,10 +91,8 @@ jobs:
         make test
         gcov --preserve-paths --long-file-names $(find CMakeFiles/test_general_cov.dir -name '*.gcno')
         gcov --preserve-paths --long-file-names $(find CMakeFiles/test_private_cov.dir -name '*.gcno')
-
     # https://community.sonarsource.com/t/analyzing-a-header-only-c-library/51468
-    - name: Run sonar-scanner
-      run: >
+    - run: >
         sonar-scanner
         --define sonar.projectKey="pavel-kirienko_o1heap"
         --define sonar.organization="pavel-kirienko"
@@ -105,19 +100,18 @@ jobs:
         --define sonar.sourceEncoding="UTF-8"
         --define sonar.cfamily.gcov.reportsPath="."
         --define sonar.cfamily.build-wrapper-output="${{ env.BUILD_WRAPPER_OUT_DIR }}"
-        --define sonar.cfamily.cache.enabled="false"
-        --define sonar.cfamily.threads=2
         --define sonar.host.url="${{ env.SONAR_SERVER_URL }}"
         --define sonar.login=${{ secrets.SONAR_TOKEN }}
         $([ -z "$GITHUB_BASE_REF" ] && echo "--define sonar.branch.name=${GITHUB_REF##*/}" || true)
 
   style_check:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: DoozyX/clang-format-lint-action@v0.12
+      - uses: actions/checkout@v3
+      - uses: DoozyX/clang-format-lint-action@v0.15
         with:
           source: './o1heap ./tests'
           exclude: './tests/catch'
           extensions: 'c,h,cpp,hpp'
-          clangFormatVersion: 12
+          clangFormatVersion: ${{ env.LLVM_VERSION }}

@@ -29,24 +29,21 @@ set(library_dir "${CMAKE_SOURCE_DIR}/../o1heap")
 # If not suppressed, the tools used here shall be available, otherwise the build will fail.
 if (NOT NO_STATIC_ANALYSIS)
     # clang-tidy (separate config files per directory)
-    find_program(clang_tidy NAMES clang-tidy-12 clang-tidy)
+    find_program(clang_tidy NAMES clang-tidy)
     if (NOT clang_tidy)
         message(FATAL_ERROR "Could not locate clang-tidy")
     endif ()
     message(STATUS "Using clang-tidy: ${clang_tidy}")
     set(CMAKE_C_CLANG_TIDY ${clang_tidy})
     set(CMAKE_CXX_CLANG_TIDY ${clang_tidy})
+endif ()
 
-    # clang-format
-    find_program(clang_format NAMES clang-format-12 clang-format)
-    if (NOT clang_format)
-        message(FATAL_ERROR "Could not locate clang-format")
-    endif ()
-    file(
-            GLOB format_files
-            ${library_dir}/*.[ch]
-            ${CMAKE_SOURCE_DIR}/*.[ch]pp
-    )
+# clang-format
+find_program(clang_format NAMES clang-format)
+if (NOT clang_format)
+    message(STATUS "Could not locate clang-format")
+else ()
+    file(GLOB format_files ${library_dir}/*.[ch] ${CMAKE_SOURCE_DIR}/*.[ch]pp)
     message(STATUS "Using clang-format: ${clang_format}; files: ${format_files}")
     add_custom_target(format COMMAND ${clang_format} -i -fallback-style=none -style=file --verbose ${format_files})
 endif ()
@@ -66,9 +63,10 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wsign-conversion -Wcast-align -Wmissing
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wtype-limits -Wzero-as-null-pointer-constant -Wnon-virtual-dtor")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Woverloaded-virtual -Wsign-promo -Wold-style-cast")
 
-include_directories(catch ${library_dir})
+include_directories(SYSTEM catch)
+include_directories(${library_dir})
 
-set(common_sources catch/main.cpp ${library_dir}/o1heap.c)
+set(common_sources ${CMAKE_SOURCE_DIR}/main.cpp ${library_dir}/o1heap.c)
 
 function(gen_test name files compile_definitions compile_features compile_flags link_flags)
     add_executable(${name} ${common_sources} ${files})

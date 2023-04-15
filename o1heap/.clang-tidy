@@ -15,7 +15,9 @@ Checks: >-
   readability-*,
   -google-readability-todo,
   -readability-avoid-const-params-in-decls,
+  -readability-identifier-length,
   -llvm-header-guard,
+  -modernize-macro-to-enum,
 CheckOptions:
   - key:   readability-function-cognitive-complexity.Threshold
     value: '199'
