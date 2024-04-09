@@ -240,6 +240,12 @@ O1HEAP_PRIVATE void unbin(O1HeapInstance* const handle, const Fragment* const fr
     }
 }
 
+#ifdef O1HEAP_TRACE
+// The user must implement these functions or linking will fail.
+extern void o1heapAllocateTrace(O1HeapInstance* const handle, void* const allocated_memory, size_t size_bytes);
+extern void o1heapFreeTrace(O1HeapInstance* const handle, void* const freed_memory, size_t size_bytes);
+#endif
+
 // ---------------------------------------- PUBLIC API IMPLEMENTATION ----------------------------------------
 
 O1HeapInstance* o1heapInit(void* const base, const size_t size)
@@ -365,8 +371,21 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
             frag->header.used = true;
 
             out = ((char*) frag) + O1HEAP_ALIGNMENT;
+#ifdef O1HEAP_TRACE
+            o1heapAllocateTrace(handle, out, frag->header.size);
+#endif
         }
     }
+
+#ifdef O1HEAP_TRACE
+    if (NULL == out)
+    {
+        // we didn't successfully allocate so call the trace method with a null pointer to indicate allocation
+        // failure. The size will be the requested size so the trace can include this information in a
+        // failed allocation event.
+        o1heapAllocateTrace(handle, out, amount);
+    }
+#endif
 
     // Update the diagnostics.
     if (O1HEAP_LIKELY(handle->diagnostics.peak_request_size < amount))
@@ -400,6 +419,10 @@ void o1heapFree(O1HeapInstance* const handle, void* const pointer)
         O1HEAP_ASSERT(frag->header.size >= FRAGMENT_SIZE_MIN);
         O1HEAP_ASSERT(frag->header.size <= handle->diagnostics.capacity);
         O1HEAP_ASSERT((frag->header.size % FRAGMENT_SIZE_MIN) == 0U);
+
+#ifdef O1HEAP_TRACE
+        o1heapFreeTrace(handle, pointer, frag->header.size);
+#endif
 
         // Even if we're going to drop the fragment later, mark it free anyway to prevent double-free.
         frag->header.used = false;
