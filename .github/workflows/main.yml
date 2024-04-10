@@ -35,7 +35,7 @@ jobs:
           -DCMAKE_CXX_COMPILER=${{ matrix.cxx-compiler }}
           tests
       - working-directory: ${{github.workspace}}/build
-        run: make VERBOSE=1
+        run: make VERBOSE=1 -j$(nproc)
       - working-directory: ${{github.workspace}}/build
         run: make test
 
