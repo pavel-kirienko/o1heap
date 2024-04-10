@@ -18,6 +18,10 @@
 #include <assert.h>
 #include <limits.h>
 
+#ifdef O1HEAP_INCLUDE_CONFIG_HEADER
+#include "o1heap_config.h"
+#endif
+
 // ---------------------------------------- BUILD CONFIGURATION OPTIONS ----------------------------------------
 
 /// Define this macro to include build configuration header. This is an alternative to the -D compiler flag.
@@ -77,6 +81,21 @@ O1HEAP_PRIVATE uint_fast8_t O1HEAP_CLZ(const size_t x)
     }
     return r;
 }
+#endif
+
+/// By defining these symbols, preferably in o1heap_config.h (define O1HEAP_INCLUDE_CONFIG_HEADER to include, see
+/// above), trace tools can get events when o1heap memory is allocated or free'ed. For allocations, note that
+/// if the allocated memory pointer is NULL an allocation failure has occurred. In this case the size reported is
+//  the number of bytes requested that the allocator could not provide.
+///
+/// When using the pointer provided via O1HEAP_TRACE_FREE the pointer memory must not be accessed. This pointer
+/// should only be used for its address.
+
+#ifndef O1HEAP_TRACE_ALLOCATE
+#   define O1HEAP_TRACE_ALLOCATE(handle, pointer, size)
+#endif
+#ifndef O1HEAP_TRACE_FREE
+#   define O1HEAP_TRACE_FREE(handle, pointer, size)
 #endif
 
 // ---------------------------------------- INTERNAL DEFINITIONS ----------------------------------------
@@ -371,21 +390,13 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
             frag->header.used = true;
 
             out = ((char*) frag) + O1HEAP_ALIGNMENT;
-#ifdef O1HEAP_TRACE
-            o1heapAllocateTrace(handle, out, frag->header.size);
-#endif
+            O1HEAP_TRACE_ALLOCATE(handle, out, frag->header.size);
+        } else {
+            O1HEAP_TRACE_ALLOCATE(handle, out, amount);
         }
+    } else {
+        O1HEAP_TRACE_ALLOCATE(handle, out, amount);
     }
-
-#ifdef O1HEAP_TRACE
-    if (NULL == out)
-    {
-        // we didn't successfully allocate so call the trace method with a null pointer to indicate allocation
-        // failure. The size will be the requested size so the trace can include this information in a
-        // failed allocation event.
-        o1heapAllocateTrace(handle, out, amount);
-    }
-#endif
 
     // Update the diagnostics.
     if (O1HEAP_LIKELY(handle->diagnostics.peak_request_size < amount))
@@ -420,9 +431,7 @@ void o1heapFree(O1HeapInstance* const handle, void* const pointer)
         O1HEAP_ASSERT(frag->header.size <= handle->diagnostics.capacity);
         O1HEAP_ASSERT((frag->header.size % FRAGMENT_SIZE_MIN) == 0U);
 
-#ifdef O1HEAP_TRACE
-        o1heapFreeTrace(handle, pointer, frag->header.size);
-#endif
+        O1HEAP_TRACE_FREE(handle, pointer, frag->header.size);
 
         // Even if we're going to drop the fragment later, mark it free anyway to prevent double-free.
         frag->header.used = false;

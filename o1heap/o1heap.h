@@ -33,32 +33,6 @@ extern "C" {
 /// The guaranteed alignment depends on the platform pointer width.
 #define O1HEAP_ALIGNMENT (sizeof(void*) * 4U)
 
-/// Define O1HEAP_TRACE to enable two extern symbols your application can implement when integrating with trace
-/// tooling:
-///
-///         Invoked from o1heapAllocate with a pointer to the newly allocated memory and the size of the
-///         memory region. Note that size_bytes is not the size of the memory requested but the size of
-///         the memory fragment reserved.
-///
-///         if allocated_memory is NULL an allocation failure has occurred. In this case size_bytes is the
-///         number of bytes requested that the allocator could not provide.
-///
-///     void o1heapAllocateTrace(O1HeapInstance* const handle, void* const allocated_memory, const size_t size_bytes);
-///
-///
-///         Invoked from o1heapFree with a pointer to the previously allocated memory and the size of the
-///         memory region released. Note that size_bytes is not the size of the memory originally requested
-///         but the size of the memory fragment that was released.
-///
-///         freed_memory must not be accessed. It is provided for it's address only.
-///
-///     void o1heapFreeTrace(O1HeapInstance* const handle, void* const freed_memory, size_t size_bytes);
-///
-/// If you define this macro you _must_ implement these methods or the link stage of your build will fail.
-///
-/// #define O1HEAP_TRACE
-
-
 /// The definition is private, so the user code can only operate on pointers. This is done to enforce encapsulation.
 typedef struct O1HeapInstance O1HeapInstance;
 
