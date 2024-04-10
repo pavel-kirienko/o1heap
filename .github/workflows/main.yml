@@ -18,7 +18,7 @@ jobs:
             c-compiler: clang
             cxx-compiler: clang++
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - run: |
           wget https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
@@ -35,7 +35,7 @@ jobs:
           -DCMAKE_CXX_COMPILER=${{ matrix.cxx-compiler }}
           tests
       - working-directory: ${{github.workspace}}/build
-        run: make VERBOSE=1
+        run: make VERBOSE=1 -j$(nproc)
       - working-directory: ${{github.workspace}}/build
         run: make test
 
@@ -47,7 +47,7 @@ jobs:
       contains(github.event.head_commit.message, '#sonar')
     runs-on: ubuntu-latest
     env:
-      SONAR_SCANNER_VERSION: 4.8.0.2856
+      SONAR_SCANNER_VERSION: 5.0.1.3006
       SONAR_SERVER_URL: "https://sonarcloud.io"
       BUILD_WRAPPER_OUT_DIR: build_wrapper_output_directory
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -55,15 +55,15 @@ jobs:
       CC: gcc
       CXX: g++
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
     - run: sudo apt install g++ g++-multilib gcc-multilib
-    - uses: actions/setup-java@v3
+    - uses: actions/setup-java@v4
       with:
-        java-version: 11
+        java-version: 17
         distribution: zulu
-    - uses: actions/cache@v3
+    - uses: actions/cache@v4
       with:
         path: ~/.sonar/cache
         key: ${{ runner.os }}-sonar
@@ -92,7 +92,8 @@ jobs:
         gcov --preserve-paths --long-file-names $(find CMakeFiles/test_general_cov.dir -name '*.gcno')
         gcov --preserve-paths --long-file-names $(find CMakeFiles/test_private_cov.dir -name '*.gcno')
     # https://community.sonarsource.com/t/analyzing-a-header-only-c-library/51468
-    - run: >
+    - if: env.SONAR_TOKEN != ''
+      run: >
         sonar-scanner
         --define sonar.projectKey="pavel-kirienko_o1heap"
         --define sonar.organization="pavel-kirienko"
@@ -108,7 +109,7 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: DoozyX/clang-format-lint-action@v0.15
         with:
           source: './o1heap ./tests'
