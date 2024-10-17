@@ -30,8 +30,8 @@ extern "C" {
 /// The semantic version number of this distribution.
 #define O1HEAP_VERSION_MAJOR 2
 
-/// The guaranteed alignment depends on the platform pointer width.
-#define O1HEAP_ALIGNMENT (sizeof(void*) * 4U)
+/// 16-byte alignment.
+#define O1HEAP_ALIGNMENT (sizeof(uint32_t) * 4U)
 
 /// The definition is private, so the user code can only operate on pointers. This is done to enforce encapsulation.
 typedef struct O1HeapInstance O1HeapInstance;
@@ -47,19 +47,19 @@ typedef struct
     /// The maximum allocation size is (capacity - O1HEAP_ALIGNMENT).
     /// This parameter does not include the overhead used up by O1HeapInstance and arena alignment.
     /// This parameter is constant.
-    size_t capacity;
+    uint32_t capacity;
 
     /// The amount of memory that is currently allocated, including the per-fragment overhead and size alignment.
     /// For example, if the application requested a fragment of size 1 byte, the value reported here may be 32 bytes.
-    size_t allocated;
+    uint32_t allocated;
 
     /// The maximum value of 'allocated' seen since initialization. This parameter is never decreased.
-    size_t peak_allocated;
+    uint32_t peak_allocated;
 
     /// The largest amount of memory that the allocator has attempted to allocate (perhaps unsuccessfully)
     /// since initialization (not including the rounding and the allocator's own per-fragment overhead,
     /// so the total is larger). This parameter is never decreased. The initial value is zero.
-    size_t peak_request_size;
+    uint32_t peak_request_size;
 
     /// The number of times an allocation request could not be completed due to the lack of memory or
     /// excessive fragmentation. OOM stands for "out of memory". This parameter is never decreased.
@@ -82,7 +82,7 @@ typedef struct
 /// it can be discarded without any de-initialization procedures.
 ///
 /// The heap is not thread-safe; external synchronization may be required.
-O1HeapInstance* o1heapInit(void* const base, const size_t size);
+O1HeapInstance* o1heapInit(void* const base, const uint32_t size);
 
 /// The semantics follows malloc() with additional guarantees the full list of which is provided below.
 ///
@@ -94,7 +94,7 @@ O1HeapInstance* o1heapInit(void* const base, const size_t size);
 ///
 /// The function is executed in constant time.
 /// The allocated memory is NOT zero-filled (because zero-filling is a variable-complexity operation).
-void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount);
+void* o1heapAllocate(O1HeapInstance* const handle, const uint32_t amount);
 
 /// The semantics follows free() with additional guarantees the full list of which is provided below.
 ///

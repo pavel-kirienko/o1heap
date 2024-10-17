@@ -1,5 +1,9 @@
 # O(1) heap
 
+This is a fork of the O(1) heap library that has been modified for use in librecomp. It has been changed to use 32-bit offsets instead of pointers for the allocation metadata, which reduces their overhead and allows the heap to be dumped and reloaded at the cost of only being able to set up a 4GB region.
+
+The original README is as follows:
+
 [![Main Workflow](https://github.com/pavel-kirienko/o1heap/actions/workflows/main.yml/badge.svg)](https://github.com/pavel-kirienko/o1heap/actions/workflows/main.yml)
 [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=pavel-kirienko_o1heap&metric=reliability_rating)](https://sonarcloud.io/dashboard?id=pavel-kirienko_o1heap)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=pavel-kirienko_o1heap&metric=coverage)](https://sonarcloud.io/dashboard?id=pavel-kirienko_o1heap)

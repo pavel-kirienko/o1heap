@@ -15,6 +15,7 @@
 // Authors: Pavel Kirienko <pavel.kirienko@zubax.com>
 
 #include "internal.hpp"
+#include <cstdlib>
 #include <algorithm>
 #include <array>
 #include <iostream>
@@ -25,10 +26,28 @@ namespace
 constexpr std::size_t KiB = 1024U;
 constexpr std::size_t MiB = KiB * KiB;
 
+#ifdef _WIN32
+void* my_aligned_alloc(size_t align, size_t size) {
+    return _aligned_malloc(size, align);
+}
+
+void my_aligned_free(void* mem) {
+    _aligned_free(mem);
+}
+#else
+void* my_aligned_alloc(size_t align, size_t size) {
+    return std::aligned_alloc(align, size);
+}
+
+void my_aligned_free(void* mem) {
+    std::aligned_free(mem);
+}
+#endif
+
 template <typename T>
 auto log2Floor(const T& x) -> std::enable_if_t<std::is_integral_v<T>, std::uint8_t>
 {
-    std::size_t  tmp = x;
+    uint32_t  tmp = x;
     std::uint8_t y   = 0;
     while (tmp > 1U)
     {
@@ -46,7 +65,7 @@ auto getRandomByte()
     return static_cast<std::byte>(dis(gen));
 }
 
-auto init(void* const base, const std::size_t size)
+auto init(void* const base, const uint32_t size)
 {
     using internal::Fragment;
 
@@ -69,13 +88,13 @@ auto init(void* const base, const std::size_t size)
             const std::size_t max = (Fragment::SizeMin << i) * 2U - 1U;
             if ((heap->nonempty_bin_mask & (1ULL << i)) == 0U)
             {
-                REQUIRE(heap->bins.at(i) == nullptr);
+                REQUIRE(heap->bins.at(i) == internal::NULLFRAGMENT);
             }
             else
             {
-                REQUIRE(heap->bins.at(i) != nullptr);
-                REQUIRE(heap->bins.at(i)->header.size >= min);
-                REQUIRE(heap->bins.at(i)->header.size <= max);
+                REQUIRE(heap->bins.at(i) != internal::NULLFRAGMENT);
+                REQUIRE(internal::GET_FRAGMENT(heap, heap->bins.at(i))->header.size >= min);
+                REQUIRE(internal::GET_FRAGMENT(heap, heap->bins.at(i))->header.size <= max);
             }
         }
 
@@ -88,13 +107,13 @@ auto init(void* const base, const std::size_t size)
         REQUIRE(heap->diagnostics.peak_request_size == 0);
 
         const auto root_fragment = heap->bins.at(log2Floor(heap->nonempty_bin_mask));
-        REQUIRE(root_fragment != nullptr);
-        REQUIRE(root_fragment->next_free == nullptr);
-        REQUIRE(root_fragment->prev_free == nullptr);
-        REQUIRE(!root_fragment->header.used);
-        REQUIRE(root_fragment->header.size == heap->diagnostics.capacity);
-        REQUIRE(root_fragment->header.next == nullptr);
-        REQUIRE(root_fragment->header.prev == nullptr);
+        REQUIRE(root_fragment != internal::NULLFRAGMENT);
+        REQUIRE(internal::GET_FRAGMENT(heap, root_fragment)->next_free == internal::NULLFRAGMENT);
+        REQUIRE(internal::GET_FRAGMENT(heap, root_fragment)->prev_free == internal::NULLFRAGMENT);
+        REQUIRE(!internal::GET_FRAGMENT(heap, root_fragment)->header.used);
+        REQUIRE(internal::GET_FRAGMENT(heap, root_fragment)->header.size == heap->diagnostics.capacity);
+        REQUIRE(internal::GET_FRAGMENT(heap, root_fragment)->header.next == internal::NULLFRAGMENT);
+        REQUIRE(internal::GET_FRAGMENT(heap, root_fragment)->header.prev == internal::NULLFRAGMENT);
     }
     return heap;
 }
@@ -105,7 +124,7 @@ TEST_CASE("General: init")
 {
     using internal::Fragment;
 
-    std::cout << "sizeof(void*)=" << sizeof(void*) << "; sizeof(O1HeapInstance)=" << sizeof(internal::O1HeapInstance)
+    std::cout << "sizeof(uint32_t)=" << sizeof(uint32_t) << "; sizeof(O1HeapInstance)=" << sizeof(internal::O1HeapInstance)
               << std::endl;
 
     alignas(128) std::array<std::byte, 10'000U> arena{};
@@ -136,7 +155,7 @@ TEST_CASE("General: allocate: OOM")
 {
     constexpr auto                   MiB256    = MiB * 256U;
     constexpr auto                   ArenaSize = MiB256 + MiB;
-    const std::shared_ptr<std::byte> arena(static_cast<std::byte*>(std::aligned_alloc(64U, ArenaSize)), &std::free);
+    const std::shared_ptr<std::byte> arena(static_cast<std::byte*>(my_aligned_alloc(64U, ArenaSize)), &my_aligned_free);
 
     auto heap = init(arena.get(), ArenaSize);
     REQUIRE(heap != nullptr);
@@ -177,7 +196,7 @@ TEST_CASE("General: allocate: smallest")
     using internal::Fragment;
 
     constexpr auto                   ArenaSize = MiB * 300U;
-    const std::shared_ptr<std::byte> arena(static_cast<std::byte*>(std::aligned_alloc(64U, ArenaSize)), &std::free);
+    const std::shared_ptr<std::byte> arena(static_cast<std::byte*>(my_aligned_alloc(64U, ArenaSize)), &my_aligned_free);
 
     auto heap = init(arena.get(), ArenaSize);
     REQUIRE(heap != nullptr);
@@ -191,11 +210,11 @@ TEST_CASE("General: allocate: smallest")
 
     auto& frag = Fragment::constructFromAllocatedMemory(mem);
     REQUIRE(frag.header.size == (O1HEAP_ALIGNMENT * 2U));
-    REQUIRE(frag.header.next != nullptr);
-    REQUIRE(frag.header.prev == nullptr);
+    REQUIRE(frag.header.next != internal::NULLFRAGMENT);
+    REQUIRE(frag.header.prev == internal::NULLFRAGMENT);
     REQUIRE(frag.header.used);
-    REQUIRE(frag.header.next->header.size == (heap->diagnostics.capacity - frag.header.size));
-    REQUIRE(!frag.header.next->header.used);
+    REQUIRE(internal::GET_FRAGMENT(heap, frag.header.next)->header.size == (heap->diagnostics.capacity - frag.header.size));
+    REQUIRE(!internal::GET_FRAGMENT(heap, frag.header.next)->header.used);
 
     heap->free(mem);
     REQUIRE(heap->doInvariantsHold());
@@ -205,10 +224,10 @@ TEST_CASE("General: allocate: size_t overflow")
 {
     using internal::Fragment;
 
-    constexpr auto size_max = std::numeric_limits<std::size_t>::max();
+    constexpr auto size_max = std::numeric_limits<uint32_t>::max();
 
     constexpr auto                   ArenaSize = MiB * 300U;
-    const std::shared_ptr<std::byte> arena(static_cast<std::byte*>(std::aligned_alloc(64U, ArenaSize)), &std::free);
+    const std::shared_ptr<std::byte> arena(static_cast<std::byte*>(my_aligned_alloc(64U, ArenaSize)), &my_aligned_free);
 
     auto heap = init(arena.get(), ArenaSize);
     REQUIRE(heap != nullptr);
@@ -240,15 +259,15 @@ TEST_CASE("General: allocate: size_t overflow")
 
     auto& frag = Fragment::constructFromAllocatedMemory(mem);
     REQUIRE(frag.header.size == Fragment::SizeMax);
-    REQUIRE(frag.header.next == nullptr);
-    REQUIRE(frag.header.prev == nullptr);
+    REQUIRE(frag.header.next == internal::NULLFRAGMENT);
+    REQUIRE(frag.header.prev == internal::NULLFRAGMENT);
     REQUIRE(frag.header.used);
 
     REQUIRE(heap->getDiagnostics().peak_allocated == Fragment::SizeMax);
     REQUIRE(heap->getDiagnostics().allocated == Fragment::SizeMax);
 
     REQUIRE(heap->nonempty_bin_mask == 0);
-    REQUIRE(std::all_of(std::begin(heap->bins), std::end(heap->bins), [](auto* p) { return p == nullptr; }));
+    REQUIRE(std::all_of(std::begin(heap->bins), std::end(heap->bins), [](internal::FragmentOffset p) { return p == internal::NULLFRAGMENT; }));
 
     REQUIRE(heap->doInvariantsHold());
 }
@@ -268,11 +287,11 @@ TEST_CASE("General: free")
     REQUIRE(heap->diagnostics.peak_request_size == 0U);
     REQUIRE(heap->diagnostics.oom_count == 0U);
 
-    std::size_t allocated         = 0U;
-    std::size_t peak_allocated    = 0U;
-    std::size_t peak_request_size = 0U;
+    uint32_t allocated         = 0U;
+    uint32_t peak_allocated    = 0U;
+    uint32_t peak_request_size = 0U;
 
-    const auto alloc = [&](const std::size_t amount, const std::vector<std::pair<bool, std::size_t>>& reference) {
+    const auto alloc = [&](const uint32_t amount, const std::vector<std::pair<bool, uint32_t>>& reference) {
         const auto p = heap->allocate(amount);
         if (amount > 0U)
         {
@@ -304,7 +323,7 @@ TEST_CASE("General: free")
         return p;
     };
 
-    const auto dealloc = [&](void* const p, const std::vector<std::pair<bool, std::size_t>>& reference) {
+    const auto dealloc = [&](void* const p, const std::vector<std::pair<bool, uint32_t>>& reference) {
         INFO(heap->visualize());
         if (p != nullptr)
         {
@@ -478,16 +497,16 @@ TEST_CASE("General: random A")
     using internal::Fragment;
 
     constexpr auto                   ArenaSize = MiB * 300U;
-    const std::shared_ptr<std::byte> arena(static_cast<std::byte*>(std::aligned_alloc(64U, ArenaSize)), &std::free);
+    const std::shared_ptr<std::byte> arena(static_cast<std::byte*>(my_aligned_alloc(64U, ArenaSize)), &my_aligned_free);
     std::generate_n(arena.get(), ArenaSize, getRandomByte);  // Random-fill the ENTIRE arena!
     auto heap = init(arena.get(), ArenaSize);
     REQUIRE(heap != nullptr);
 
     std::vector<void*> pointers;
 
-    std::size_t   allocated         = 0U;
-    std::size_t   peak_allocated    = 0U;
-    std::size_t   peak_request_size = 0U;
+    std::uint32_t allocated         = 0U;
+    std::uint32_t peak_allocated    = 0U;
+    std::uint32_t peak_request_size = 0U;
     std::uint64_t oom_count         = 0U;
 
     std::random_device random_device;
@@ -495,9 +514,9 @@ TEST_CASE("General: random A")
 
     const auto allocate = [&]() {
         REQUIRE(heap->doInvariantsHold());
-        std::uniform_int_distribution<std::size_t> dis(0, ArenaSize / 1000U);
+        std::uniform_int_distribution<uint32_t> dis(0, ArenaSize / 1000U);
 
-        const std::size_t amount = dis(random_generator);
+        const uint32_t amount = dis(random_generator);
         const auto        ptr    = heap->allocate(amount);
         if (ptr != nullptr)
         {
@@ -531,7 +550,7 @@ TEST_CASE("General: random A")
             if (ptr != nullptr)
             {
                 const auto& frag = Fragment::constructFromAllocatedMemory(ptr);
-                frag.validate();
+                frag.validate(heap);
                 REQUIRE(allocated >= frag.header.size);
                 allocated -= frag.header.size;
             }

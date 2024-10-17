@@ -34,19 +34,32 @@
 namespace internal
 {
 extern "C" {
-auto log2Floor(const std::size_t x) -> std::uint8_t;
-auto log2Ceil(const std::size_t x) -> std::uint8_t;
-auto pow2(const std::uint8_t power) -> std::size_t;
-auto roundUpToPowerOf2(const std::size_t x) -> std::size_t;
+auto log2Floor(const uint32_t x) -> std::uint8_t;
+auto log2Ceil(const uint32_t x) -> std::uint8_t;
+auto pow2(const std::uint8_t power) -> uint32_t;
+auto roundUpToPowerOf2(const uint32_t x) -> uint32_t;
 }
 
 struct Fragment;
+struct O1HeapInstance;
+
+typedef uint32_t FragmentOffset;
+
+internal::Fragment* GET_FRAGMENT(const internal::O1HeapInstance* const heap_instance, FragmentOffset offset) {
+    return reinterpret_cast<internal::Fragment*>(reinterpret_cast<uintptr_t>(heap_instance) + offset);
+}
+
+FragmentOffset GET_OFFSET(const internal::O1HeapInstance* heap_instance, const internal::Fragment* fragment) {
+    return static_cast<FragmentOffset>(reinterpret_cast<uintptr_t>(fragment) - reinterpret_cast<uintptr_t>(heap_instance));
+}
+
+constexpr internal::FragmentOffset NULLFRAGMENT = 0;
 
 struct FragmentHeader final
 {
-    Fragment*   next = nullptr;
-    Fragment*   prev = nullptr;
-    std::size_t size = 0U;
+    FragmentOffset next = NULLFRAGMENT;
+    FragmentOffset prev = NULLFRAGMENT;
+    uint32_t    size = 0U;
     bool        used = false;
 };
 
@@ -54,11 +67,11 @@ struct Fragment final
 {
     FragmentHeader header;
 
-    Fragment* next_free = nullptr;
-    Fragment* prev_free = nullptr;
+    FragmentOffset next_free = NULLFRAGMENT;
+    FragmentOffset prev_free = NULLFRAGMENT;
 
-    static constexpr auto SizeMin = O1HEAP_ALIGNMENT * 2U;
-    static constexpr auto SizeMax = (std::numeric_limits<std::size_t>::max() >> 1U) + 1U;
+    static constexpr uint32_t SizeMin = O1HEAP_ALIGNMENT * 2U;
+    static constexpr uint32_t SizeMax = (std::numeric_limits<uint32_t>::max() >> 1U) + 1U;
     static_assert((SizeMin & (SizeMin - 1U)) == 0U);
     static_assert((SizeMax & (SizeMax - 1U)) == 0U);
 
@@ -84,7 +97,7 @@ struct Fragment final
         throw std::logic_error("Invalid fragment size");
     }
 
-    void validate() const
+    void validate(const internal::O1HeapInstance* handle) const
     {
         const auto address = reinterpret_cast<std::size_t>(this);
         REQUIRE((address % sizeof(void*)) == 0U);
@@ -95,21 +108,23 @@ struct Fragment final
         REQUIRE((header.size % SizeMin) == 0U);
 
         // Heap fragment interlinking. Free blocks cannot neighbor each other because they are supposed to be merged.
-        if (header.next != nullptr)
+        if (header.next != NULLFRAGMENT)
         {
-            REQUIRE((header.used || header.next->header.used));
-            const auto adr = reinterpret_cast<std::size_t>(header.next);
+            Fragment* next_frag = GET_FRAGMENT(handle, header.next);
+            REQUIRE((header.used || next_frag->header.used));
+            const auto adr = reinterpret_cast<std::size_t>(next_frag);
             REQUIRE((adr % sizeof(void*)) == 0U);
-            REQUIRE(header.next->header.prev == this);
+            REQUIRE(next_frag->header.prev == GET_OFFSET(handle, this));
             REQUIRE(adr > address);
             REQUIRE(((adr - address) % SizeMin) == 0U);
         }
-        if (header.prev != nullptr)
+        if (header.prev != NULLFRAGMENT)
         {
-            REQUIRE((header.used || header.prev->header.used));
-            const auto adr = reinterpret_cast<std::size_t>(header.prev);
+            Fragment* prev_frag = GET_FRAGMENT(handle, header.prev);
+            REQUIRE((header.used || prev_frag->header.used));
+            const auto adr = reinterpret_cast<std::size_t>(prev_frag);
             REQUIRE((adr % sizeof(void*)) == 0U);
-            REQUIRE(header.prev->header.next == this);
+            REQUIRE(prev_frag->header.next == GET_OFFSET(handle, this));
             REQUIRE(address > adr);
             REQUIRE(((address - adr) % SizeMin) == 0U);
         }
@@ -117,15 +132,15 @@ struct Fragment final
         // Segregated free list interlinking.
         if (!header.used)
         {
-            if (next_free != nullptr)
+            if (next_free != NULLFRAGMENT)
             {
-                REQUIRE(next_free->prev_free == this);
-                REQUIRE(!next_free->header.used);
+                REQUIRE(GET_FRAGMENT(handle, next_free)->prev_free == GET_OFFSET(handle, this));
+                REQUIRE(!GET_FRAGMENT(handle, next_free)->header.used);
             }
-            if (prev_free != nullptr)
+            if (prev_free != NULLFRAGMENT)
             {
-                REQUIRE(prev_free->next_free == this);
-                REQUIRE(!prev_free->header.used);
+                REQUIRE(GET_FRAGMENT(handle, prev_free)->next_free == GET_OFFSET(handle, this));
+                REQUIRE(!GET_FRAGMENT(handle, prev_free)->header.used);
             }
         }
     }
@@ -141,20 +156,20 @@ struct Fragment final
 /// Please maintain the fields in exact sync with the private definition in o1heap.c!
 struct O1HeapInstance final
 {
-    std::array<Fragment*, sizeof(std::size_t) * 8U> bins{};
+    std::array<FragmentOffset, sizeof(uint32_t) * 8U> bins{};
 
-    std::size_t nonempty_bin_mask = 0;
+    uint32_t nonempty_bin_mask = 0;
 
     /// The same data is available via getDiagnostics(). The duplication is intentional.
     O1HeapDiagnostics diagnostics{};
 
-    [[nodiscard]] auto allocate(const size_t amount)
+    [[nodiscard]] auto allocate(const uint32_t amount)
     {
         validate();  // Can't use RAII because it may throw -- can't throw from destructor.
         const auto out = o1heapAllocate(reinterpret_cast<::O1HeapInstance*>(this), amount);
         if (out != nullptr)
         {
-            Fragment::constructFromAllocatedMemory(out).validate();
+            Fragment::constructFromAllocatedMemory(out).validate(this);
         }
         validate();
         return out;
@@ -194,8 +209,8 @@ struct O1HeapInstance final
         REQUIRE(frag->header.size <= Fragment::SizeMax);
         REQUIRE(frag->header.size <= diagnostics.capacity);
         REQUIRE((frag->header.size % Fragment::SizeMin) == 0U);
-        REQUIRE(((frag->header.next == nullptr) || (frag->header.next->header.prev == frag)));
-        REQUIRE(frag->header.prev == nullptr);  // The first fragment has no prev!
+        REQUIRE(((frag->header.next == NULLFRAGMENT) || (GET_FRAGMENT(this, frag->header.next)->header.prev == GET_OFFSET(this, frag))));
+        REQUIRE(frag->header.prev == NULLFRAGMENT);  // The first fragment has no prev!
         return frag;
     }
 
@@ -209,23 +224,25 @@ struct O1HeapInstance final
     /// A list of fragment descriptors to match the heap state against.
     /// The boolean is true if the fragment shall be used (allocated); the size is its size in bytes, overhead included.
     /// If the size is zero, it will be ignored (i.e., any value will match).
-    void matchFragments(const std::vector<std::pair<bool, std::size_t>>& reference) const
+    void matchFragments(const std::vector<std::pair<bool, uint32_t>>& reference) const
     {
         validate();
         INFO(visualize());
         auto frag = getFirstFragment();
+        FragmentOffset frag_ = GET_OFFSET(this, frag);
         for (auto item : reference)
         {
             const auto [used, size] = item;
-            CAPTURE(used, size, frag);
-            REQUIRE(frag != nullptr);
+            CAPTURE(used, size, frag, frag_);
+            REQUIRE(frag_ != NULLFRAGMENT);
             REQUIRE(frag->header.used == used);
             CAPTURE(frag->header.size);
             REQUIRE((((size == 0U) || (frag->header.size == size))));
-            REQUIRE(((frag->header.next == nullptr) || (frag->header.next->header.prev == frag)));
-            frag = frag->header.next;
+            REQUIRE(((frag->header.next == NULLFRAGMENT) || (GET_FRAGMENT(this, frag->header.next)->header.prev == GET_OFFSET(this, frag))));
+            frag_ = frag->header.next;
+            frag = GET_FRAGMENT(this, frag_);
         }
-        REQUIRE(frag == nullptr);
+        REQUIRE(frag_ == NULLFRAGMENT);
     }
 
     [[nodiscard]] auto visualize() const -> std::string
@@ -240,6 +257,7 @@ struct O1HeapInstance final
                << "Size of used blocks is printed as-is, size of free blocks is printed in [brackets]. "
                << "All sizes are divided by the min fragment size (" << Fragment::SizeMin << " bytes).\n";
         auto frag = getFirstFragment();
+        FragmentOffset frag_ = GET_OFFSET(this, frag);
         do
         {
             const auto size_blocks = frag->header.size / Fragment::SizeMin;
@@ -251,8 +269,9 @@ struct O1HeapInstance final
             {
                 buffer << "[" << size_blocks << "] ";
             }
-            frag = frag->header.next;
-        } while (frag != nullptr);
+            frag_ = frag->header.next;
+            frag = GET_FRAGMENT(this, frag_);
+        } while (frag_ != NULLFRAGMENT);
         buffer << "\n";
         return buffer.str();
     }
@@ -285,24 +304,25 @@ private:
 
     void validateFragmentChain() const
     {
-        std::size_t pending_bins = 0U;
+        uint32_t pending_bins = 0U;
         for (std::size_t i = 0U; i < std::size(bins); i++)
         {
-            if (bins.at(i) != nullptr)
+            if (bins.at(i) != NULLFRAGMENT)
             {
-                pending_bins |= static_cast<std::size_t>(1) << i;
+                pending_bins |= static_cast<uint32_t>(1) << i;
             }
         }
         // Ensure the bin lookup mask is in sync with the bins.
         REQUIRE(pending_bins == nonempty_bin_mask);
 
-        std::size_t total_size      = 0U;
-        std::size_t total_allocated = 0U;
+        uint32_t total_size      = 0U;
+        uint32_t total_allocated = 0U;
 
         auto frag = getFirstFragment();
+        FragmentOffset frag_ = GET_OFFSET(this, frag);
         do
         {
-            frag->validate();
+            frag->validate(this);
             REQUIRE(frag->header.size <= diagnostics.capacity);
 
             // Update and check the totals early.
@@ -316,21 +336,22 @@ private:
                 REQUIRE(total_allocated <= total_size);
                 REQUIRE((total_allocated % Fragment::SizeMin) == 0U);
                 // Ensure no bin links to a used fragment.
-                REQUIRE(bins.at(frag->getBinIndex()) != frag);
+                REQUIRE(bins.at(frag->getBinIndex()) != GET_OFFSET(this, frag));
             }
             else
             {
-                const std::size_t mask = static_cast<std::size_t>(1) << frag->getBinIndex();
+                const uint32_t mask = static_cast<uint32_t>(1) << frag->getBinIndex();
                 REQUIRE((nonempty_bin_mask & mask) != 0U);
-                if (bins.at(frag->getBinIndex()) == frag)
+                if (bins.at(frag->getBinIndex()) == GET_OFFSET(this, frag))
                 {
                     REQUIRE((pending_bins & mask) != 0U);
                     pending_bins &= ~mask;
                 }
             }
 
-            frag = frag->header.next;
-        } while (frag != nullptr);
+            frag_ = frag->header.next;
+            frag = GET_FRAGMENT(this, frag_);
+        } while (frag_ != NULLFRAGMENT);
 
         // Ensure there were no hanging bin pointers.
         REQUIRE(pending_bins == 0);
@@ -342,19 +363,20 @@ private:
 
     void validateSegregatedFreeLists() const
     {
-        std::size_t total_free = 0U;
+        uint32_t total_free = 0U;
         for (std::size_t i = 0U; i < std::size(bins); i++)
         {
-            const std::size_t mask = static_cast<std::size_t>(1) << i;
-            const std::size_t min  = Fragment::SizeMin << i;
-            const std::size_t max  = (Fragment::SizeMin << i) * 2U - 1U;
+            const uint32_t mask = static_cast<uint32_t>(1) << i;
+            const uint32_t min  = Fragment::SizeMin << i;
+            const uint32_t max  = (Fragment::SizeMin << i) * 2U - 1U;
 
-            auto frag = bins.at(i);
-            if (frag != nullptr)
+            auto frag_ = bins.at(i);
+            if (frag_ != NULLFRAGMENT)
             {
+                Fragment* frag = GET_FRAGMENT(this, frag_);
                 REQUIRE((nonempty_bin_mask & mask) != 0U);
                 REQUIRE(!frag->header.used);
-                REQUIRE(frag->prev_free == nullptr);  // The first fragment in the segregated list has no prev.
+                REQUIRE(frag->prev_free == NULLFRAGMENT);  // The first fragment in the segregated list has no prev.
                 do
                 {
                     REQUIRE(frag->header.size >= min);
@@ -362,19 +384,22 @@ private:
 
                     total_free += frag->header.size;
 
-                    if (frag->next_free != nullptr)
+                    if (frag->next_free != NULLFRAGMENT)
                     {
-                        REQUIRE(frag->next_free->prev_free == frag);
-                        REQUIRE(!frag->next_free->header.used);
+                        Fragment* next_frag = GET_FRAGMENT(this, frag->next_free);
+                        REQUIRE(next_frag->prev_free == GET_OFFSET(this, frag));
+                        REQUIRE(!next_frag->header.used);
                     }
-                    if (frag->prev_free != nullptr)
+                    if (frag->prev_free != NULLFRAGMENT)
                     {
-                        REQUIRE(frag->prev_free->next_free == frag);
-                        REQUIRE(!frag->prev_free->header.used);
+                        Fragment* prev_frag = GET_FRAGMENT(this, frag->prev_free);
+                        REQUIRE(prev_frag->next_free == GET_OFFSET(this, frag));
+                        REQUIRE(!prev_frag->header.used);
                     }
 
-                    frag = frag->next_free;
-                } while (frag != nullptr);
+                    frag_ = frag->next_free;
+                    frag = GET_FRAGMENT(this, frag_);
+                } while (frag_ != NULLFRAGMENT);
             }
             else
             {
