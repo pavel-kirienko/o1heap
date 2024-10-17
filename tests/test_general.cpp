@@ -27,19 +27,23 @@ constexpr std::size_t KiB = 1024U;
 constexpr std::size_t MiB = KiB * KiB;
 
 #ifdef _WIN32
-void* my_aligned_alloc(size_t align, size_t size) {
+void* my_aligned_alloc(size_t align, size_t size)
+{
     return _aligned_malloc(size, align);
 }
 
-void my_aligned_free(void* mem) {
+void my_aligned_free(void* mem)
+{
     _aligned_free(mem);
 }
 #else
-void* my_aligned_alloc(size_t align, size_t size) {
+void* my_aligned_alloc(size_t align, size_t size) 
+{
     return std::aligned_alloc(align, size);
 }
 
-void my_aligned_free(void* mem) {
+void my_aligned_free(void* mem)
+{
     std::aligned_free(mem);
 }
 #endif
@@ -47,7 +51,7 @@ void my_aligned_free(void* mem) {
 template <typename T>
 auto log2Floor(const T& x) -> std::enable_if_t<std::is_integral_v<T>, std::uint8_t>
 {
-    uint32_t  tmp = x;
+    uint32_t     tmp = x;
     std::uint8_t y   = 0;
     while (tmp > 1U)
     {
@@ -124,8 +128,8 @@ TEST_CASE("General: init")
 {
     using internal::Fragment;
 
-    std::cout << "sizeof(uint32_t)=" << sizeof(uint32_t) << "; sizeof(O1HeapInstance)=" << sizeof(internal::O1HeapInstance)
-              << std::endl;
+    std::cout << "sizeof(uint32_t)=" << sizeof(uint32_t)
+              << "; sizeof(O1HeapInstance)=" << sizeof(internal::O1HeapInstance) << std::endl;
 
     alignas(128) std::array<std::byte, 10'000U> arena{};
 
@@ -213,7 +217,8 @@ TEST_CASE("General: allocate: smallest")
     REQUIRE(frag.header.next != internal::NULLFRAGMENT);
     REQUIRE(frag.header.prev == internal::NULLFRAGMENT);
     REQUIRE(frag.header.used);
-    REQUIRE(internal::GET_FRAGMENT(heap, frag.header.next)->header.size == (heap->diagnostics.capacity - frag.header.size));
+    REQUIRE(internal::GET_FRAGMENT(heap, frag.header.next)->header.size ==
+            (heap->diagnostics.capacity - frag.header.size));
     REQUIRE(!internal::GET_FRAGMENT(heap, frag.header.next)->header.used);
 
     heap->free(mem);
@@ -267,7 +272,9 @@ TEST_CASE("General: allocate: size_t overflow")
     REQUIRE(heap->getDiagnostics().allocated == Fragment::SizeMax);
 
     REQUIRE(heap->nonempty_bin_mask == 0);
-    REQUIRE(std::all_of(std::begin(heap->bins), std::end(heap->bins), [](internal::FragmentOffset p) { return p == internal::NULLFRAGMENT; }));
+    REQUIRE(std::all_of(std::begin(heap->bins), std::end(heap->bins), [](internal::FragmentOffset p) {
+        return p == internal::NULLFRAGMENT;
+    }));
 
     REQUIRE(heap->doInvariantsHold());
 }
@@ -517,7 +524,7 @@ TEST_CASE("General: random A")
         std::uniform_int_distribution<uint32_t> dis(0, ArenaSize / 1000U);
 
         const uint32_t amount = dis(random_generator);
-        const auto        ptr    = heap->allocate(amount);
+        const auto     ptr    = heap->allocate(amount);
         if (ptr != nullptr)
         {
             // Overwrite all to ensure that the allocator does not make implicit assumptions about the memory use.

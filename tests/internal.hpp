@@ -43,14 +43,17 @@ auto roundUpToPowerOf2(const uint32_t x) -> uint32_t;
 struct Fragment;
 struct O1HeapInstance;
 
-typedef uint32_t FragmentOffset;
+using FragmentOffset = uint32_t;
 
-internal::Fragment* GET_FRAGMENT(const internal::O1HeapInstance* const heap_instance, FragmentOffset offset) {
+inline auto GET_FRAGMENT(const internal::O1HeapInstance* const heap_instance, FragmentOffset offset) -> internal::Fragment*
+{
     return reinterpret_cast<internal::Fragment*>(reinterpret_cast<uintptr_t>(heap_instance) + offset);
 }
 
-FragmentOffset GET_OFFSET(const internal::O1HeapInstance* heap_instance, const internal::Fragment* fragment) {
-    return static_cast<FragmentOffset>(reinterpret_cast<uintptr_t>(fragment) - reinterpret_cast<uintptr_t>(heap_instance));
+inline auto GET_OFFSET(const internal::O1HeapInstance* heap_instance, const internal::Fragment* fragment) -> FragmentOffset
+{
+    return static_cast<FragmentOffset>(reinterpret_cast<uintptr_t>(fragment) -
+                                       reinterpret_cast<uintptr_t>(heap_instance));
 }
 
 constexpr internal::FragmentOffset NULLFRAGMENT = 0;
@@ -59,8 +62,8 @@ struct FragmentHeader final
 {
     FragmentOffset next = NULLFRAGMENT;
     FragmentOffset prev = NULLFRAGMENT;
-    uint32_t    size = 0U;
-    bool        used = false;
+    uint32_t       size = 0U;
+    bool           used = false;
 };
 
 struct Fragment final
@@ -257,7 +260,7 @@ struct O1HeapInstance final
                << "Size of used blocks is printed as-is, size of free blocks is printed in [brackets]. "
                << "All sizes are divided by the min fragment size (" << Fragment::SizeMin << " bytes).\n";
         auto frag = getFirstFragment();
-        FragmentOffset frag_ = GET_OFFSET(this, frag);
+        FragmentOffset frag_;
         do
         {
             const auto size_blocks = frag->header.size / Fragment::SizeMin;
@@ -319,7 +322,7 @@ private:
         uint32_t total_allocated = 0U;
 
         auto frag = getFirstFragment();
-        FragmentOffset frag_ = GET_OFFSET(this, frag);
+        FragmentOffset frag_;
         do
         {
             frag->validate(this);

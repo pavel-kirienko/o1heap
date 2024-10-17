@@ -114,20 +114,18 @@ typedef struct Fragment Fragment;
 
 typedef uint32_t FragmentOffset;
 
-#define GET_FRAGMENT(heap_instance, offset) \
-    ((Fragment*)((uintptr_t)(heap_instance) + (offset)))
+#define GET_FRAGMENT(heap_instance, offset) ((Fragment*) ((char*) (heap_instance) + (offset)))
 
-#define GET_OFFSET(heap_instance, fragment) \
-    ((FragmentOffset)((uintptr_t)(fragment) - (uintptr_t)(heap_instance)))
+#define GET_OFFSET(heap_instance, fragment) ((FragmentOffset) ((char*) (fragment) - (char*) (heap_instance)))
 
-#define NULLFRAGMENT ((FragmentOffset)0)
+#define NULLFRAGMENT ((FragmentOffset) 0)
 
 typedef struct FragmentHeader
 {
     FragmentOffset next;
     FragmentOffset prev;
-    uint32_t  size;
-    bool      used;
+    uint32_t       size;
+    bool           used;
 } FragmentHeader;
 static_assert(sizeof(FragmentHeader) <= O1HEAP_ALIGNMENT, "Memory layout error");
 
@@ -143,14 +141,14 @@ static_assert(sizeof(Fragment) <= FRAGMENT_SIZE_MIN, "Memory layout error");
 struct O1HeapInstance
 {
     FragmentOffset bins[NUM_BINS_MAX];  ///< Smallest fragments are in the bin at index 0.
-    uint32_t       nonempty_bin_mask;   ///< Bit 1 represents a non-empty bin; bin at index 0 is for the smallest fragments.
+    uint32_t nonempty_bin_mask;  ///< Bit 1 represents a non-empty bin; bin at index 0 is for the smallest fragments.
 
     O1HeapDiagnostics diagnostics;
 };
 
 /// The amount of space allocated for the heap instance.
 /// Its size is padded up to O1HEAP_ALIGNMENT to ensure correct alignment of the allocation arena that follows.
-#define INSTANCE_SIZE_PADDED ((sizeof(O1HeapInstance) + O1HEAP_ALIGNMENT - 1U) & ~(O1HEAP_ALIGNMENT - 1U))
+#define INSTANCE_SIZE_PADDED (((uint32_t)sizeof(O1HeapInstance) + O1HEAP_ALIGNMENT - 1U) & ~(O1HEAP_ALIGNMENT - 1U))
 
 static_assert(INSTANCE_SIZE_PADDED >= sizeof(O1HeapInstance), "Invalid instance footprint computation");
 static_assert((INSTANCE_SIZE_PADDED % O1HEAP_ALIGNMENT) == 0U, "Invalid instance footprint computation");
@@ -346,7 +344,7 @@ void* o1heapAllocate(O1HeapInstance* const handle, const uint32_t amount)
 
             // Split the fragment if it is too large.
             const uint32_t leftover = frag->header.size - fragment_size;
-            frag->header.size     = fragment_size;
+            frag->header.size       = fragment_size;
             O1HEAP_ASSERT(leftover < handle->diagnostics.capacity);  // Overflow check.
             O1HEAP_ASSERT(leftover % FRAGMENT_SIZE_MIN == 0U);       // Alignment check.
             if (O1HEAP_LIKELY(leftover >= FRAGMENT_SIZE_MIN))
@@ -418,8 +416,8 @@ void o1heapFree(O1HeapInstance* const handle, void* const pointer)
         handle->diagnostics.allocated -= frag->header.size;
 
         // Merge with siblings and insert the returned fragment into the appropriate bin and update metadata.
-        FragmentOffset prev_ = frag->header.prev;
-        FragmentOffset next_ = frag->header.next;
+        FragmentOffset  prev_      = frag->header.prev;
+        FragmentOffset  next_      = frag->header.next;
         Fragment* const prev       = GET_FRAGMENT(handle, prev_);
         Fragment* const next       = GET_FRAGMENT(handle, next_);
         const bool      join_left  = (prev_ != NULLFRAGMENT) && (!prev->header.used);
