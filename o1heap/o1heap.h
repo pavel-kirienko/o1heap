@@ -11,7 +11,7 @@
 // OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
-// Copyright (c) 2020 Pavel Kirienko
+// Copyright (c) Pavel Kirienko
 // Authors: Pavel Kirienko <pavel.kirienko@zubax.com>
 //
 // READ THE DOCUMENTATION IN README.md.
@@ -115,6 +115,19 @@ bool o1heapDoInvariantsHold(const O1HeapInstance* const handle);
 /// This function merely copies the structure from an internal storage, so it is fast to return.
 /// If the handle pointer is NULL, the behavior is undefined.
 O1HeapDiagnostics o1heapGetDiagnostics(const O1HeapInstance* const handle);
+
+/// Advanced diagnostic hooks; not used by default.
+/// If O1HEAP_TRACE is not defined or is zero, these functions should be left unimplemented.
+/// Iff O1HEAP_TRACE is defined and is nonzero, the library will emit trace events by invoking these functions,
+/// which are to be defined in the application (or linking will fail).
+///
+/// For allocations, note that if the allocated memory pointer is NULL, an allocation failure has occurred.
+/// In this case, the size reported is the number of bytes requested that the allocator could not provide.
+///
+/// When using the pointer provided via o1heapTraceFree(), the pointer memory must not be accessed.
+/// This pointer should only be used for its address.
+extern void o1heapTraceAllocate(O1HeapInstance* const handle, void* const allocated_memory, size_t size);
+extern void o1heapTraceFree(O1HeapInstance* const handle, void* const freed_memory, size_t size);
 
 #ifdef __cplusplus
 }

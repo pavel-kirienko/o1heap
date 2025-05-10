@@ -1,10 +1,8 @@
 # O(1) heap
 
 [![Main Workflow](https://github.com/pavel-kirienko/o1heap/actions/workflows/main.yml/badge.svg)](https://github.com/pavel-kirienko/o1heap/actions/workflows/main.yml)
-[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=pavel-kirienko_o1heap&metric=reliability_rating)](https://sonarcloud.io/dashboard?id=pavel-kirienko_o1heap)
-[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=pavel-kirienko_o1heap&metric=coverage)](https://sonarcloud.io/dashboard?id=pavel-kirienko_o1heap)
 
-O1heap is a highly deterministic constant-complexity memory allocator designed for
+O1Heap is a highly deterministic constant-complexity memory allocator designed for
 hard real-time high-integrity embedded systems.
 The name stands for *O(1) heap*.
 
@@ -45,10 +43,10 @@ This implementation derives from or is based on the ideas presented in:
 - "Worst case fragmentation of first fit and best fit storage allocation strategies" -- J. M. Robson, 1975.
 
 This implementation does not make any non-trivial assumptions about the behavioral properties of the application.
-Per Herter [2014], it can be described as a *predictably bad allocator*:
+Per Herter \[2014], it can be described as a *predictably bad allocator*:
 
 > An allocator that provably performs close to its worst-case memory behavior which, in turn,
-> is better than the worst-case behavior of the allocators discussed [in Herter 2014],
+> is better than the worst-case behavior of the allocators discussed \[in Herter 2014],
 > but much worse than the memory consumption of these for normal programs without (mostly theoretical)
 > bad (de-)allocation sequences.
 
@@ -104,7 +102,7 @@ catastrophic fragmentation cannot occur.
 
 The above-defined theoretical worst-case upper bound H may be prohibitively high for some
 memory-constrained applications.
-It has been shown [Robson 1975] that under a typical workload,
+It has been shown \[Robson 1975] that under a typical workload,
 for a sufficiently high amount of memory available to the allocator which is less than $H$,
 the probability of a (de-)allocation sequence that results in catastrophic fragmentation is low.
 When combined with an acceptable failure probability and a set of adequate assumptions about the behaviors of
@@ -113,7 +111,7 @@ the heap while ensuring a sufficient degree of predictability and reliability.
 The methods of such optimization are outside the scope of this document;
 interested readers are advised to consult with the referred publications.
 
-Following some of the ideas from [Herter 2014], this implementation takes caching-related issues into consideration
+Following some of the ideas from \[Herter 2014], this implementation takes caching-related issues into consideration
 by choosing the most recently used memory fragments to minimize cache misses in the application.
 
 ### Implementation
@@ -238,6 +236,12 @@ If not overridden by the user, for some compilers `O1HEAP_CLZ(x)` will expand to
 For other compilers it will default to a slow software implementation,
 which is likely to significantly degrade the performance of the library.
 
+#### O1HEAP_TRACE
+
+This option is intended for advanced diagnostics and may be not useful in most applications.
+If defined and is nonzero, makes o1heap invoke `extern` trace functions (implemented in the application)
+on every allocation and deallocation. Please refer to `o1heap.h` for usage details.
+
 ## Development
 
 ### Dependencies
@@ -247,15 +251,6 @@ The following tools should be available locally to conduct library development:
 - Modern versions of CMake, GCC, Clang, and Clang-Tools.
 - An AMD64 machine.
 - (optional) Valgrind.
-
-### Conventions
-
-The codebase shall follow the [Zubax C/C++ Coding Conventions](https://kb.zubax.com/x/84Ah).
-Compliance is enforced through the following means:
-
-- Clang-Tidy -- invoked automatically while building the test suite.
-- Clang-Format -- invoked manually as `make format`; enforced in CI/CD automatically.
-- SonarCloud -- invoked by CI/CD automatically.
 
 ### Testing
 
@@ -267,34 +262,32 @@ Update the version number macro in the header file and create a new git tag like
 
 ### MISRA compliance
 
-MISRA compliance is enforced with the help of the following tools:
+MISRA compliance is enforced with the help of:
 
 - Clang-Tidy -- invoked automatically during the normal build process.
-- SonarCloud -- invoked as part of the continuous integration build.
 
 Every intentional deviation shall be documented and justified in-place using the following notation,
 followed by the appropriate static analyser warning suppression statement:
 
 ```c
 // Intentional violation of MISRA: <valid reason here>
-// NOSONAR
-// NOLINT
+// NOLINT(*-specific-rule)
 ```
 
 The list of intentional deviations can be obtained by simply searching the codebase for the above comments.
-
-Do not suppress compliance warnings using the means provided by static analysis tools because such deviations
-are impossible to track at the source code level.
-An exception applies for the case of false-positive (invalid) warnings -- those should not be mentioned in the codebase.
 
 ## Further reading
 
 - [Timing-Predictable Memory Allocation In Hard Real-Time Systems](https://publikationen.sulb.uni-saarland.de/bitstream/20.500.11880/26614/1/diss.pdf), J. Herter, 2014.
 - [Worst case fragmentation of first fit and best fit storage allocation strategies](https://academic.oup.com/comjnl/article/20/3/242/751782), J. M. Robson, 1975.
 - [Dynamic Memory Allocation In SQLite](https://sqlite.org/malloc.html) -- on Robson proof and deterministic fragmentation.
-- *[Russian]* [Динамическая память в системах жёсткого реального времени](https://habr.com/ru/post/486650/) -- issues with dynamic memory allocation in modern embedded RTOS and related popular misconceptions.
+- [Динамическая память в системах жёсткого реального времени](https://habr.com/ru/post/486650/) -- issues with dynamic memory allocation in modern embedded RTOS and related popular misconceptions.
 
 ## Changelog
+
+### Next version WIP
+
+- Add optional trace events, enabled via the `O1HEAP_TRACE` build-time option.
 
 ### v2.1
 

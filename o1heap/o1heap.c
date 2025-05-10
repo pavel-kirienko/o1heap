@@ -11,8 +11,10 @@
 // OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
-// Copyright (c) 2020 Pavel Kirienko
+// Copyright (c) Pavel Kirienko
 // Authors: Pavel Kirienko <pavel.kirienko@zubax.com>
+
+// ReSharper disable CppDFANullDereference
 
 #include "o1heap.h"
 #include <assert.h>
@@ -77,6 +79,20 @@ O1HEAP_PRIVATE uint_fast8_t O1HEAP_CLZ(const size_t x)
     }
     return r;
 }
+#endif
+
+/// If O1HEAP_TRACE is defined and is nonzero, trace tools can get events when o1heap memory is allocated or freed.
+/// The corresponding events are delivered by invoking extern functions o1heapTraceAllocate() etc, defined in the
+/// application. Please refer to the documentation for those functions for the additional information.
+#ifndef O1HEAP_TRACE
+#    define O1HEAP_TRACE 0
+#endif
+#if O1HEAP_TRACE
+#    define O1HEAP_TRACE_ALLOCATE(handle, pointer, size) o1heapTraceAllocate(handle, pointer, size)
+#    define O1HEAP_TRACE_FREE(handle, pointer, size) o1heapTraceFree(handle, pointer, size)
+#else
+#    define O1HEAP_TRACE_ALLOCATE(handle, pointer, size) (void) 0
+#    define O1HEAP_TRACE_FREE(handle, pointer, size) (void) 0
 #endif
 
 // ---------------------------------------- INTERNAL DEFINITIONS ----------------------------------------
@@ -365,7 +381,16 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
             frag->header.used = true;
 
             out = ((char*) frag) + O1HEAP_ALIGNMENT;
+            O1HEAP_TRACE_ALLOCATE(handle, out, frag->header.size);
         }
+        else
+        {
+            O1HEAP_TRACE_ALLOCATE(handle, out, amount);
+        }
+    }
+    else
+    {
+        O1HEAP_TRACE_ALLOCATE(handle, out, amount);
     }
 
     // Update the diagnostics.
@@ -400,6 +425,8 @@ void o1heapFree(O1HeapInstance* const handle, void* const pointer)
         O1HEAP_ASSERT(frag->header.size >= FRAGMENT_SIZE_MIN);
         O1HEAP_ASSERT(frag->header.size <= handle->diagnostics.capacity);
         O1HEAP_ASSERT((frag->header.size % FRAGMENT_SIZE_MIN) == 0U);
+
+        O1HEAP_TRACE_FREE(handle, pointer, frag->header.size);
 
         // Even if we're going to drop the fragment later, mark it free anyway to prevent double-free.
         frag->header.used = false;

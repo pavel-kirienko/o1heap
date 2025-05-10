@@ -25,9 +25,9 @@ endif ()
 
 set(library_dir "${CMAKE_SOURCE_DIR}/../o1heap")
 
-# Use -DNO_STATIC_ANALYSIS=1 to suppress static analysis.
-# If not suppressed, the tools used here shall be available, otherwise the build will fail.
-if (NOT NO_STATIC_ANALYSIS)
+# clang-tidy
+set(DISABLE_CLANG_TIDY OFF CACHE BOOL "Do not use Clang-Tidy")
+if (NOT DISABLE_CLANG_TIDY)
     # clang-tidy (separate config files per directory)
     find_program(clang_tidy NAMES clang-tidy)
     if (NOT clang_tidy)
@@ -99,3 +99,4 @@ gen_test_matrix(
         test_general.cpp
         ""
 )
+gen_test("test_general_c11_x32_trc" "test_general.cpp" "O1HEAP_TRACE=1" c_std_11 "-m32" "-m32")

@@ -1,7 +1,7 @@
 name: Main Workflow
 on: [push, pull_request]
 env:
-  LLVM_VERSION: 15
+  LLVM_VERSION: 19
 jobs:
   test:
     if: github.event_name == 'push'
@@ -39,78 +39,12 @@ jobs:
       - working-directory: ${{github.workspace}}/build
         run: make test
 
-  sonarcloud:
-    if: >
-      github.event_name == 'pull_request'                   ||
-      contains(github.ref, '/master')                       ||
-      contains(github.ref, '/release')                      ||
-      contains(github.event.head_commit.message, '#sonar')
-    runs-on: ubuntu-latest
-    env:
-      SONAR_SCANNER_VERSION: 5.0.1.3006
-      SONAR_SERVER_URL: "https://sonarcloud.io"
-      BUILD_WRAPPER_OUT_DIR: build_wrapper_output_directory
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      CC: gcc
-      CXX: g++
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-    - run: sudo apt install g++ g++-multilib gcc-multilib
-    - uses: actions/setup-java@v4
-      with:
-        java-version: 17
-        distribution: zulu
-    - uses: actions/cache@v4
-      with:
-        path: ~/.sonar/cache
-        key: ${{ runner.os }}-sonar
-        restore-keys: ${{ runner.os }}-sonar
-    - name: Download and set up sonar-scanner
-      env:
-        SONAR_SCANNER_DOWNLOAD_URL: https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-${{ env.SONAR_SCANNER_VERSION }}-linux.zip
-      run: |
-        mkdir -p $HOME/.sonar
-        curl -sSLo $HOME/.sonar/sonar-scanner.zip ${{ env.SONAR_SCANNER_DOWNLOAD_URL }}
-        unzip -o $HOME/.sonar/sonar-scanner.zip -d $HOME/.sonar/
-        echo "$HOME/.sonar/sonar-scanner-${{ env.SONAR_SCANNER_VERSION }}-linux/bin" >> $GITHUB_PATH
-    - name: Download and set up build-wrapper
-      env:
-        BUILD_WRAPPER_DOWNLOAD_URL: ${{ env.SONAR_SERVER_URL }}/static/cpp/build-wrapper-linux-x86.zip
-      run: |
-        curl -sSLo $HOME/.sonar/build-wrapper-linux-x86.zip ${{ env.BUILD_WRAPPER_DOWNLOAD_URL }}
-        unzip -o $HOME/.sonar/build-wrapper-linux-x86.zip -d $HOME/.sonar/
-        echo "$HOME/.sonar/build-wrapper-linux-x86" >> $GITHUB_PATH
-    # Pass NDEBUG to exclude assert() from coverage; see https://github.com/pavel-kirienko/o1heap/issues/9
-    - name: Run build-wrapper
-      run: |
-        cmake tests -DCMAKE_BUILD_TYPE=Debug -DNO_STATIC_ANALYSIS=1 -DCMAKE_C_FLAGS='-DNDEBUG=1'
-        build-wrapper-linux-x86-64 --out-dir ${{ env.BUILD_WRAPPER_OUT_DIR }} make all
-        make test
-        gcov --preserve-paths --long-file-names $(find CMakeFiles/test_general_cov.dir -name '*.gcno')
-        gcov --preserve-paths --long-file-names $(find CMakeFiles/test_private_cov.dir -name '*.gcno')
-    # https://community.sonarsource.com/t/analyzing-a-header-only-c-library/51468
-    - if: env.SONAR_TOKEN != ''
-      run: >
-        sonar-scanner
-        --define sonar.projectKey="pavel-kirienko_o1heap"
-        --define sonar.organization="pavel-kirienko"
-        --define sonar.sources="o1heap/"
-        --define sonar.sourceEncoding="UTF-8"
-        --define sonar.cfamily.gcov.reportsPath="."
-        --define sonar.cfamily.build-wrapper-output="${{ env.BUILD_WRAPPER_OUT_DIR }}"
-        --define sonar.host.url="${{ env.SONAR_SERVER_URL }}"
-        --define sonar.login=${{ secrets.SONAR_TOKEN }}
-        $([ -z "$GITHUB_BASE_REF" ] && echo "--define sonar.branch.name=${GITHUB_REF##*/}" || true)
-
   style_check:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: DoozyX/clang-format-lint-action@v0.15
+      - uses: DoozyX/clang-format-lint-action@v0.20
         with:
           source: './o1heap ./tests'
           exclude: './tests/catch'
