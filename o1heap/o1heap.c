@@ -11,16 +11,14 @@
 // OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
-// Copyright (c) 2020 Pavel Kirienko
+// Copyright (c) Pavel Kirienko
 // Authors: Pavel Kirienko <pavel.kirienko@zubax.com>
+
+// ReSharper disable CppDFANullDereference
 
 #include "o1heap.h"
 #include <assert.h>
 #include <limits.h>
-
-#ifdef O1HEAP_INCLUDE_CONFIG_HEADER
-#include "o1heap_config.h"
-#endif
 
 // ---------------------------------------- BUILD CONFIGURATION OPTIONS ----------------------------------------
 
@@ -83,19 +81,18 @@ O1HEAP_PRIVATE uint_fast8_t O1HEAP_CLZ(const size_t x)
 }
 #endif
 
-/// By defining these symbols, preferably in o1heap_config.h (define O1HEAP_INCLUDE_CONFIG_HEADER to include, see
-/// above), trace tools can get events when o1heap memory is allocated or free'ed. For allocations, note that
-/// if the allocated memory pointer is NULL an allocation failure has occurred. In this case the size reported is
-//  the number of bytes requested that the allocator could not provide.
-///
-/// When using the pointer provided via O1HEAP_TRACE_FREE the pointer memory must not be accessed. This pointer
-/// should only be used for its address.
-
-#ifndef O1HEAP_TRACE_ALLOCATE
-#   define O1HEAP_TRACE_ALLOCATE(handle, pointer, size)
+/// If O1HEAP_TRACE is defined and is nonzero, trace tools can get events when o1heap memory is allocated or freed.
+/// The corresponding events are delivered by invoking extern functions o1heapTraceAllocate() etc, defined in the
+/// application. Please refer to the documentation for those functions for the additional information.
+#ifndef O1HEAP_TRACE
+#    define O1HEAP_TRACE 0
 #endif
-#ifndef O1HEAP_TRACE_FREE
-#   define O1HEAP_TRACE_FREE(handle, pointer, size)
+#if O1HEAP_TRACE
+#    define O1HEAP_TRACE_ALLOCATE(handle, pointer, size) o1heapTraceAllocate(handle, pointer, size)
+#    define O1HEAP_TRACE_FREE(handle, pointer, size) o1heapTraceFree(handle, pointer, size)
+#else
+#    define O1HEAP_TRACE_ALLOCATE(handle, pointer, size) (void) 0
+#    define O1HEAP_TRACE_FREE(handle, pointer, size) (void) 0
 #endif
 
 // ---------------------------------------- INTERNAL DEFINITIONS ----------------------------------------
@@ -259,12 +256,6 @@ O1HEAP_PRIVATE void unbin(O1HeapInstance* const handle, const Fragment* const fr
     }
 }
 
-#ifdef O1HEAP_TRACE
-// The user must implement these functions or linking will fail.
-extern void o1heapAllocateTrace(O1HeapInstance* const handle, void* const allocated_memory, size_t size_bytes);
-extern void o1heapFreeTrace(O1HeapInstance* const handle, void* const freed_memory, size_t size_bytes);
-#endif
-
 // ---------------------------------------- PUBLIC API IMPLEMENTATION ----------------------------------------
 
 O1HeapInstance* o1heapInit(void* const base, const size_t size)
@@ -391,10 +382,14 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
 
             out = ((char*) frag) + O1HEAP_ALIGNMENT;
             O1HEAP_TRACE_ALLOCATE(handle, out, frag->header.size);
-        } else {
+        }
+        else
+        {
             O1HEAP_TRACE_ALLOCATE(handle, out, amount);
         }
-    } else {
+    }
+    else
+    {
         O1HEAP_TRACE_ALLOCATE(handle, out, amount);
     }
 

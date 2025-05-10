@@ -238,6 +238,12 @@ If not overridden by the user, for some compilers `O1HEAP_CLZ(x)` will expand to
 For other compilers it will default to a slow software implementation,
 which is likely to significantly degrade the performance of the library.
 
+#### O1HEAP_TRACE
+
+This option is intended for advanced diagnostics and may be not useful in most applications.
+If defined and is nonzero, makes o1heap invoke `extern` trace functions (implemented in the application)
+on every allocation and deallocation. Please refer to `o1heap.h` for usage details.
+
 ## Development
 
 ### Dependencies
