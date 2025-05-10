@@ -476,6 +476,14 @@ void o1heapFree(O1HeapInstance* const handle, void* const pointer)
     }
 }
 
+size_t o1heapGetMaxAllocationSize(const O1HeapInstance* const handle)
+{
+    O1HEAP_ASSERT(handle != NULL);
+    // The largest allocation is smaller (up to almost two times) than the arena capacity,
+    // due to the power-of-two padding and the fragment header overhead.
+    return pow2(log2Floor(handle->diagnostics.capacity)) - O1HEAP_ALIGNMENT;
+}
+
 bool o1heapDoInvariantsHold(const O1HeapInstance* const handle)
 {
     O1HEAP_ASSERT(handle != NULL);

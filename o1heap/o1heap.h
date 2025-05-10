@@ -104,6 +104,10 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount);
 /// The function is executed in constant time.
 void o1heapFree(O1HeapInstance* const handle, void* const pointer);
 
+/// Obtains the maximum theoretically possible allocation size for this heap instance.
+/// This is useful when implementing std::allocator_traits<Alloc>::max_size.
+size_t o1heapGetMaxAllocationSize(const O1HeapInstance* const handle);
+
 /// Performs a basic sanity check on the heap.
 /// This function can be used as a weak but fast method of heap corruption detection.
 /// If the handle pointer is NULL, the behavior is undefined.
