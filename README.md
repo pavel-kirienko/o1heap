@@ -1,10 +1,8 @@
 # O(1) heap
 
 [![Main Workflow](https://github.com/pavel-kirienko/o1heap/actions/workflows/main.yml/badge.svg)](https://github.com/pavel-kirienko/o1heap/actions/workflows/main.yml)
-[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=pavel-kirienko_o1heap&metric=reliability_rating)](https://sonarcloud.io/dashboard?id=pavel-kirienko_o1heap)
-[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=pavel-kirienko_o1heap&metric=coverage)](https://sonarcloud.io/dashboard?id=pavel-kirienko_o1heap)
 
-O1heap is a highly deterministic constant-complexity memory allocator designed for
+O1Heap is a highly deterministic constant-complexity memory allocator designed for
 hard real-time high-integrity embedded systems.
 The name stands for *O(1) heap*.
 
@@ -254,15 +252,6 @@ The following tools should be available locally to conduct library development:
 - An AMD64 machine.
 - (optional) Valgrind.
 
-### Conventions
-
-The codebase shall follow the [Zubax C/C++ Coding Conventions](https://kb.zubax.com/x/84Ah).
-Compliance is enforced through the following means:
-
-- Clang-Tidy -- invoked automatically while building the test suite.
-- Clang-Format -- invoked manually as `make format`; enforced in CI/CD automatically.
-- SonarCloud -- invoked by CI/CD automatically.
-
 ### Testing
 
 Please refer to the continuous integration configuration to see how to invoke the tests.
@@ -273,32 +262,26 @@ Update the version number macro in the header file and create a new git tag like
 
 ### MISRA compliance
 
-MISRA compliance is enforced with the help of the following tools:
+MISRA compliance is enforced with the help of:
 
 - Clang-Tidy -- invoked automatically during the normal build process.
-- SonarCloud -- invoked as part of the continuous integration build.
 
 Every intentional deviation shall be documented and justified in-place using the following notation,
 followed by the appropriate static analyser warning suppression statement:
 
 ```c
 // Intentional violation of MISRA: <valid reason here>
-// NOSONAR
-// NOLINT
+// NOLINT(*-specific-rule)
 ```
 
 The list of intentional deviations can be obtained by simply searching the codebase for the above comments.
-
-Do not suppress compliance warnings using the means provided by static analysis tools because such deviations
-are impossible to track at the source code level.
-An exception applies for the case of false-positive (invalid) warnings -- those should not be mentioned in the codebase.
 
 ## Further reading
 
 - [Timing-Predictable Memory Allocation In Hard Real-Time Systems](https://publikationen.sulb.uni-saarland.de/bitstream/20.500.11880/26614/1/diss.pdf), J. Herter, 2014.
 - [Worst case fragmentation of first fit and best fit storage allocation strategies](https://academic.oup.com/comjnl/article/20/3/242/751782), J. M. Robson, 1975.
 - [Dynamic Memory Allocation In SQLite](https://sqlite.org/malloc.html) -- on Robson proof and deterministic fragmentation.
-- *[Russian]* [Динамическая память в системах жёсткого реального времени](https://habr.com/ru/post/486650/) -- issues with dynamic memory allocation in modern embedded RTOS and related popular misconceptions.
+- [Динамическая память в системах жёсткого реального времени](https://habr.com/ru/post/486650/) -- issues with dynamic memory allocation in modern embedded RTOS and related popular misconceptions.
 
 ## Changelog
 
