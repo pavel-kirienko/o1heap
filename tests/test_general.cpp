@@ -562,6 +562,13 @@ TEST_CASE("General: random A")
     }
 }
 
+TEST_CASE("General: min arena size")
+{
+    alignas(128U) std::array<std::byte, 1024> arena{};
+    REQUIRE(nullptr == init(arena.data(), o1heapMinArenaSize - 1U));
+    REQUIRE(nullptr != init(arena.data(), o1heapMinArenaSize));
+}
+
 TEST_CASE("General: max allocation size")
 {
     alignas(128U) std::array<std::byte, 4096U + sizeof(internal::O1HeapInstance) + O1HEAP_ALIGNMENT - 1U> arena{};

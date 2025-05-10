@@ -14,7 +14,7 @@
 // Copyright (c) Pavel Kirienko
 // Authors: Pavel Kirienko <pavel.kirienko@zubax.com>
 
-// ReSharper disable CppDFANullDereference
+// ReSharper disable CppDFANullDereference CppRedundantCastExpression
 
 #include "o1heap.h"
 #include <assert.h>
@@ -258,11 +258,12 @@ O1HEAP_PRIVATE void unbin(O1HeapInstance* const handle, const Fragment* const fr
 
 // ---------------------------------------- PUBLIC API IMPLEMENTATION ----------------------------------------
 
+const size_t o1heapMinArenaSize = INSTANCE_SIZE_PADDED + FRAGMENT_SIZE_MIN;
+
 O1HeapInstance* o1heapInit(void* const base, const size_t size)
 {
     O1HeapInstance* out = NULL;
-    if ((base != NULL) && ((((size_t) base) % O1HEAP_ALIGNMENT) == 0U) &&
-        (size >= (INSTANCE_SIZE_PADDED + FRAGMENT_SIZE_MIN)))
+    if ((base != NULL) && ((((size_t) base) % O1HEAP_ALIGNMENT) == 0U) && (size >= o1heapMinArenaSize))
     {
         // Allocate the core heap metadata structure in the beginning of the arena.
         O1HEAP_ASSERT(((size_t) base) % sizeof(O1HeapInstance*) == 0U);

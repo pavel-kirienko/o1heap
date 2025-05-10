@@ -66,6 +66,11 @@ typedef struct
     uint64_t oom_count;
 } O1HeapDiagnostics;
 
+/// o1heapInit() will fail unless the arena size is at least this large.
+/// This value depends only on the machine architecture.
+/// The other reason to fail is if the arena pointer is not aligned at O1HEAP_ALIGNMENT.
+extern const size_t o1heapMinArenaSize;
+
 /// The arena base pointer shall be aligned at O1HEAP_ALIGNMENT, otherwise NULL is returned.
 ///
 /// The total heap capacity cannot exceed approx. (SIZE_MAX/2). If the arena size allows for a larger heap,
@@ -76,10 +81,13 @@ typedef struct
 /// own needs (normally about 40..600 bytes depending on the architecture, but this parameter is not characterized).
 /// A pointer to the newly initialized instance is returned.
 ///
-/// If the provided space is insufficient, NULL is returned.
+/// The function fails and returns NULL iff:
+/// - The provided space is less than o1heapMinArenaSize.
+/// - The base pointer is not aligned at O1HEAP_ALIGNMENT.
+/// - The base pointer is NULL.
 ///
-/// An initialized instance does not hold any resources. Therefore, if the instance is no longer needed,
-/// it can be discarded without any de-initialization procedures.
+/// An initialized instance does not hold any resources except for the arena memory.
+/// Therefore, if the instance is no longer needed, it can be discarded without any de-initialization procedures.
 ///
 /// The heap is not thread-safe; external synchronization may be required.
 O1HeapInstance* o1heapInit(void* const base, const size_t size);
