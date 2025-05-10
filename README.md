@@ -302,6 +302,10 @@ An exception applies for the case of false-positive (invalid) warnings -- those 
 
 ## Changelog
 
+### Next version WIP
+
+- Add optional trace events, enabled via the `O1HEAP_TRACE` build-time option.
+
 ### v2.1
 
 - Significantly accelerate (de-)allocation by replacing the naïve log2 implementation with fast CLZ intrinsics;
