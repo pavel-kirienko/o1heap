@@ -603,3 +603,21 @@ TEST_CASE("General: invariant checker")
     dg.oom_count++;
     REQUIRE(heap->doInvariantsHold());
 }
+
+extern "C" void o1heapTraceAllocate(O1HeapInstance* const handle, void* const allocated_memory, size_t size)
+{
+    REQUIRE(handle != nullptr);
+    const auto* const h = reinterpret_cast<internal::O1HeapInstance*>(handle);
+    h->validate();
+    (void) allocated_memory;
+    (void) size;
+}
+
+extern "C" void o1heapTraceFree(O1HeapInstance* const handle, void* const freed_memory, size_t size)
+{
+    REQUIRE(handle != nullptr);
+    const auto* const h = reinterpret_cast<internal::O1HeapInstance*>(handle);
+    h->validate();
+    (void) freed_memory;
+    (void) size;
+}
