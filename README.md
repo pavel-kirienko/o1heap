@@ -43,10 +43,10 @@ This implementation derives from or is based on the ideas presented in:
 - "Worst case fragmentation of first fit and best fit storage allocation strategies" -- J. M. Robson, 1975.
 
 This implementation does not make any non-trivial assumptions about the behavioral properties of the application.
-Per Herter [2014], it can be described as a *predictably bad allocator*:
+Per Herter \[2014], it can be described as a *predictably bad allocator*:
 
 > An allocator that provably performs close to its worst-case memory behavior which, in turn,
-> is better than the worst-case behavior of the allocators discussed [in Herter 2014],
+> is better than the worst-case behavior of the allocators discussed \[in Herter 2014],
 > but much worse than the memory consumption of these for normal programs without (mostly theoretical)
 > bad (de-)allocation sequences.
 
@@ -102,7 +102,7 @@ catastrophic fragmentation cannot occur.
 
 The above-defined theoretical worst-case upper bound H may be prohibitively high for some
 memory-constrained applications.
-It has been shown [Robson 1975] that under a typical workload,
+It has been shown \[Robson 1975] that under a typical workload,
 for a sufficiently high amount of memory available to the allocator which is less than $H$,
 the probability of a (de-)allocation sequence that results in catastrophic fragmentation is low.
 When combined with an acceptable failure probability and a set of adequate assumptions about the behaviors of
@@ -111,7 +111,7 @@ the heap while ensuring a sufficient degree of predictability and reliability.
 The methods of such optimization are outside the scope of this document;
 interested readers are advised to consult with the referred publications.
 
-Following some of the ideas from [Herter 2014], this implementation takes caching-related issues into consideration
+Following some of the ideas from \[Herter 2014], this implementation takes caching-related issues into consideration
 by choosing the most recently used memory fragments to minimize cache misses in the application.
 
 ### Implementation
