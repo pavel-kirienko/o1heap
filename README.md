@@ -288,6 +288,8 @@ The list of intentional deviations can be obtained by simply searching the codeb
 ### Next version WIP
 
 - Add optional trace events, enabled via the `O1HEAP_TRACE` build-time option.
+- Add [`o1heapMinArenaSize`](https://github.com/pavel-kirienko/o1heap/issues/17#issuecomment-1518245157).
+- Add [`o1heapGetMaxAllocationSize`](https://github.com/pavel-kirienko/o1heap/issues/18).
 
 ### v2.1
 

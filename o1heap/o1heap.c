@@ -14,7 +14,7 @@
 // Copyright (c) Pavel Kirienko
 // Authors: Pavel Kirienko <pavel.kirienko@zubax.com>
 
-// ReSharper disable CppDFANullDereference
+// ReSharper disable CppDFANullDereference CppRedundantCastExpression
 
 #include "o1heap.h"
 #include <assert.h>
@@ -258,11 +258,12 @@ O1HEAP_PRIVATE void unbin(O1HeapInstance* const handle, const Fragment* const fr
 
 // ---------------------------------------- PUBLIC API IMPLEMENTATION ----------------------------------------
 
+const size_t o1heapMinArenaSize = INSTANCE_SIZE_PADDED + FRAGMENT_SIZE_MIN;
+
 O1HeapInstance* o1heapInit(void* const base, const size_t size)
 {
     O1HeapInstance* out = NULL;
-    if ((base != NULL) && ((((size_t) base) % O1HEAP_ALIGNMENT) == 0U) &&
-        (size >= (INSTANCE_SIZE_PADDED + FRAGMENT_SIZE_MIN)))
+    if ((base != NULL) && ((((size_t) base) % O1HEAP_ALIGNMENT) == 0U) && (size >= o1heapMinArenaSize))
     {
         // Allocate the core heap metadata structure in the beginning of the arena.
         O1HEAP_ASSERT(((size_t) base) % sizeof(O1HeapInstance*) == 0U);
@@ -474,6 +475,14 @@ void o1heapFree(O1HeapInstance* const handle, void* const pointer)
             rebin(handle, frag);
         }
     }
+}
+
+size_t o1heapGetMaxAllocationSize(const O1HeapInstance* const handle)
+{
+    O1HEAP_ASSERT(handle != NULL);
+    // The largest allocation is smaller (up to almost two times) than the arena capacity,
+    // due to the power-of-two padding and the fragment header overhead.
+    return pow2(log2Floor(handle->diagnostics.capacity)) - O1HEAP_ALIGNMENT;
 }
 
 bool o1heapDoInvariantsHold(const O1HeapInstance* const handle)

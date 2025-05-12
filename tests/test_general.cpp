@@ -562,6 +562,34 @@ TEST_CASE("General: random A")
     }
 }
 
+TEST_CASE("General: min arena size")
+{
+    alignas(128U) std::array<std::byte, 1024> arena{};
+    REQUIRE(nullptr == init(arena.data(), o1heapMinArenaSize - 1U));
+    REQUIRE(nullptr != init(arena.data(), o1heapMinArenaSize));
+}
+
+TEST_CASE("General: max allocation size")
+{
+    alignas(128U) std::array<std::byte, 4096U + sizeof(internal::O1HeapInstance) + O1HEAP_ALIGNMENT - 1U> arena{};
+    {
+        auto heap = init(arena.data(), std::size(arena));
+        REQUIRE(heap != nullptr);
+        REQUIRE(heap->diagnostics.capacity == 4096);
+        REQUIRE(4096 - O1HEAP_ALIGNMENT == heap->getMaxAllocationSize());
+        REQUIRE(nullptr == heap->allocate(heap->getMaxAllocationSize() + 1));
+        REQUIRE(nullptr != heap->allocate(heap->getMaxAllocationSize() + 0));
+    }
+    {
+        auto heap = init(arena.data(), std::size(arena) - O1HEAP_ALIGNMENT);
+        REQUIRE(heap != nullptr);
+        REQUIRE(heap->diagnostics.capacity < 4095);
+        REQUIRE(2048 - O1HEAP_ALIGNMENT == heap->getMaxAllocationSize());
+        REQUIRE(nullptr == heap->allocate(heap->getMaxAllocationSize() + 1));
+        REQUIRE(nullptr != heap->allocate(heap->getMaxAllocationSize() + 0));
+    }
+}
+
 TEST_CASE("General: invariant checker")
 {
     using internal::Fragment;

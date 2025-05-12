@@ -167,6 +167,11 @@ struct O1HeapInstance final
         validate();
     }
 
+    [[nodiscard]] auto getMaxAllocationSize() const
+    {
+        return o1heapGetMaxAllocationSize(reinterpret_cast<const ::O1HeapInstance*>(this));
+    }
+
     [[nodiscard]] auto doInvariantsHold() const
     {
         return o1heapDoInvariantsHold(reinterpret_cast<const ::O1HeapInstance*>(this));
