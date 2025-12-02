@@ -577,46 +577,61 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
                 }
             }
 
-            // Cannot expand in place. Handle the fragmentation pitfall by freeing the old block first.
-            // This enables merging with adjacent free blocks before attempting reallocation.
+            // Cannot expand in place. Try to allocate without freeing first to preserve data integrity.
             if (out == NULL)
             {
                 const size_t bytes_to_copy = (new_amount < (current_fragment_size - O1HEAP_ALIGNMENT)) ?
                                                  new_amount :
                                                  (current_fragment_size - O1HEAP_ALIGNMENT);
 
-                // The free operation overwrites the first 2*sizeof(void*) bytes with next_free and prev_free pointers
-                const size_t bytes_to_save = 2U * sizeof(void*);
-                char         saved_bytes[2U * sizeof(void*)];
-
-                if (bytes_to_copy > 0U)
-                {
-                    // Save the beginning of the user data that will be overwritten by free
-                    const size_t save_count = (bytes_to_copy < bytes_to_save) ? bytes_to_copy : bytes_to_save;
-                    (void) memcpy(saved_bytes, pointer, save_count);
-                }
-
-                // Free the old block - this enables merging with adjacent free blocks
-                o1heapFree(handle, pointer);
-
-                // Try allocation
+                // First, try to allocate new block without freeing the old one
                 out = o1heapAllocate(handle, new_amount);
 
-                if ((out != NULL) && (bytes_to_copy > 0U))
+                if (out != NULL)
                 {
-                    // Copy the old data to the new location
-                    // First, restore the saved bytes
-                    const size_t restore_count = (bytes_to_copy < bytes_to_save) ? bytes_to_copy : bytes_to_save;
-                    (void) memcpy(out, saved_bytes, restore_count);
-
-                    // Copy the rest of the data (if any) from the old location
-                    if (bytes_to_copy > bytes_to_save)
+                    // Success! Copy data and free the old block
+                    if (bytes_to_copy > 0U)
                     {
-                        // The old fragment is now free, but the data beyond the first few bytes should still be intact
-                        const size_t remaining_bytes = bytes_to_copy - bytes_to_save;
-                        (void) memcpy(((char*) out) + bytes_to_save,
-                                      ((const char*) pointer) + bytes_to_save,
-                                      remaining_bytes);
+                        (void) memcpy(out, pointer, bytes_to_copy);
+                    }
+                    o1heapFree(handle, pointer);
+                }
+                else
+                {
+                    // Allocation failed. Try deallocating first to enable merging with adjacent blocks.
+                    // This is the fragmentation pitfall case - data may be lost if reallocation fails.
+                    const size_t bytes_to_save = 2U * sizeof(void*);
+                    char         saved_bytes[2U * sizeof(void*)];
+
+                    if (bytes_to_copy > 0U)
+                    {
+                        // Save the beginning of the user data that will be overwritten by free
+                        const size_t save_count = (bytes_to_copy < bytes_to_save) ? bytes_to_copy : bytes_to_save;
+                        (void) memcpy(saved_bytes, pointer, save_count);
+                    }
+
+                    // Free the old block - this enables merging with adjacent free blocks
+                    o1heapFree(handle, pointer);
+
+                    // Try allocation again
+                    out = o1heapAllocate(handle, new_amount);
+
+                    if ((out != NULL) && (bytes_to_copy > 0U))
+                    {
+                        // Copy the old data to the new location
+                        // First, restore the saved bytes
+                        const size_t restore_count = (bytes_to_copy < bytes_to_save) ? bytes_to_copy : bytes_to_save;
+                        (void) memcpy(out, saved_bytes, restore_count);
+
+                        // Copy the rest of the data (if any) from the old location
+                        if (bytes_to_copy > bytes_to_save)
+                        {
+                            // The old fragment is now free, but the data beyond the first few bytes should still be intact
+                            const size_t remaining_bytes = bytes_to_copy - bytes_to_save;
+                            (void) memcpy(((char*) out) + bytes_to_save,
+                                          ((const char*) pointer) + bytes_to_save,
+                                          remaining_bytes);
+                        }
                     }
                 }
             }

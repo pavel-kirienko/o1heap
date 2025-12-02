@@ -167,6 +167,18 @@ struct O1HeapInstance final
         validate();
     }
 
+    [[nodiscard]] auto reallocate(void* const pointer, const size_t new_amount)
+    {
+        validate();
+        const auto out = o1heapReallocate(reinterpret_cast<::O1HeapInstance*>(this), pointer, new_amount);
+        if (out != nullptr)
+        {
+            Fragment::constructFromAllocatedMemory(out).validate();
+        }
+        validate();
+        return out;
+    }
+
     [[nodiscard]] auto getMaxAllocationSize() const
     {
         return o1heapGetMaxAllocationSize(reinterpret_cast<const ::O1HeapInstance*>(this));

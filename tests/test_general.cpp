@@ -641,7 +641,7 @@ TEST_CASE("General: reallocate: NULL pointer")
     REQUIRE(heap != nullptr);
 
     // Reallocate with NULL pointer should behave like allocate
-    void* ptr = o1heapReallocate(reinterpret_cast<O1HeapInstance*>(heap), nullptr, 100U);
+    void* ptr = heap->reallocate(nullptr, 100U);
     REQUIRE(ptr != nullptr);
     REQUIRE(heap->diagnostics.allocated > 0U);
 
@@ -662,7 +662,7 @@ TEST_CASE("General: reallocate: zero size")
     REQUIRE(ptr != nullptr);
 
     // Reallocate with zero size should free and return NULL
-    void* new_ptr = o1heapReallocate(reinterpret_cast<O1HeapInstance*>(heap), ptr, 0U);
+    void* new_ptr = heap->reallocate(ptr, 0U);
     REQUIRE(new_ptr == nullptr);
     REQUIRE(heap->diagnostics.allocated == 0U);
     REQUIRE(heap->doInvariantsHold());
@@ -691,7 +691,7 @@ TEST_CASE("General: reallocate: shrink")
     const std::size_t allocated_before = heap->diagnostics.allocated;
 
     // Reallocate to smaller size (512 bytes)
-    void* new_ptr = o1heapReallocate(reinterpret_cast<O1HeapInstance*>(heap), ptr, 512U);
+    void* new_ptr = heap->reallocate(ptr, 512U);
     REQUIRE(new_ptr == ptr);  // Should be same pointer (no move)
     REQUIRE(heap->diagnostics.allocated == allocated_before);  // Same allocation
 
@@ -726,7 +726,7 @@ TEST_CASE("General: reallocate: in-place expansion")
     }
 
     // Reallocate to larger size (2 KiB) - should expand in place since next fragment is free
-    void* new_ptr = o1heapReallocate(reinterpret_cast<O1HeapInstance*>(heap), ptr, 2 * KiB);
+    void* new_ptr = heap->reallocate(ptr, 2 * KiB);
     REQUIRE(new_ptr == ptr);  // Should be same pointer (expanded in place)
 
     // Verify data integrity
@@ -768,7 +768,7 @@ TEST_CASE("General: reallocate: move required")
     heap->free(ptr3);
 
     // Reallocate ptr1 to much larger size - will need to move
-    void* new_ptr = o1heapReallocate(reinterpret_cast<O1HeapInstance*>(heap), ptr1, 8 * KiB);
+    void* new_ptr = heap->reallocate(ptr1, 8 * KiB);
     REQUIRE(new_ptr != nullptr);
     // May or may not be same pointer depending on fragmentation handling
 
@@ -814,7 +814,7 @@ TEST_CASE("General: reallocate: OOM handling")
     // Try to reallocate ptr to a size that requires merging
     // Note: If reallocation fails, the fragmentation pitfall handling may have freed the original block
     // This is a trade-off for avoiding fragmentation
-    void* new_ptr = o1heapReallocate(reinterpret_cast<O1HeapInstance*>(heap), ptr, 700 * KiB);
+    void* new_ptr = heap->reallocate(ptr, 700 * KiB);
 
     if (new_ptr != nullptr)
     {
@@ -863,7 +863,7 @@ TEST_CASE("General: reallocate: fragmentation pitfall")
 
     // Now reallocate ptr2 to larger size
     // This tests the fragmentation pitfall handling - should free ptr2 first to merge with neighbors
-    void* new_ptr = o1heapReallocate(reinterpret_cast<O1HeapInstance*>(heap), ptr2, 600 * KiB);
+    void* new_ptr = heap->reallocate(ptr2, 600 * KiB);
     REQUIRE(new_ptr != nullptr);
 
     // Verify data integrity for first part
@@ -898,7 +898,7 @@ TEST_CASE("General: reallocate: data preservation")
 
         // Reallocate to larger size
         const auto new_size = size * 2U;
-        void* new_ptr       = o1heapReallocate(reinterpret_cast<O1HeapInstance*>(heap), ptr, new_size);
+        void* new_ptr       = heap->reallocate(ptr, new_size);
         REQUIRE(new_ptr != nullptr);
 
         // Verify all original data is preserved
@@ -909,7 +909,7 @@ TEST_CASE("General: reallocate: data preservation")
 
         // Reallocate to smaller size
         const auto smaller_size = size / 2U > 0U ? size / 2U : 1U;
-        void*      ptr3         = o1heapReallocate(reinterpret_cast<O1HeapInstance*>(heap), new_ptr, smaller_size);
+        void*      ptr3         = heap->reallocate(new_ptr, smaller_size);
         REQUIRE(ptr3 != nullptr);
 
         // Verify data is still preserved for the smaller size
@@ -936,7 +936,7 @@ TEST_CASE("General: reallocate: edge cases")
     REQUIRE(ptr != nullptr);
     reinterpret_cast<std::byte*>(ptr)[0] = std::byte(42);
 
-    void* new_ptr = o1heapReallocate(reinterpret_cast<O1HeapInstance*>(heap), ptr, 1U);
+    void* new_ptr = heap->reallocate(ptr, 1U);
     REQUIRE(new_ptr == ptr);  // Should be same pointer
     REQUIRE(reinterpret_cast<std::byte*>(new_ptr)[0] == std::byte(42));
 
@@ -947,11 +947,120 @@ TEST_CASE("General: reallocate: edge cases")
     REQUIRE(ptr != nullptr);
     reinterpret_cast<std::byte*>(ptr)[0] = std::byte(123);
 
-    new_ptr = o1heapReallocate(reinterpret_cast<O1HeapInstance*>(heap), ptr, 1 * MiB);
+    new_ptr = heap->reallocate(ptr, 1 * MiB);
     REQUIRE(new_ptr != nullptr);
     REQUIRE(reinterpret_cast<std::byte*>(new_ptr)[0] == std::byte(123));
 
     heap->free(new_ptr);
+    REQUIRE(heap->doInvariantsHold());
+}
+
+TEST_CASE("General: reallocate: fragment matching")
+{
+    using internal::Fragment;
+
+    alignas(128U) std::array<std::byte, 4096U + sizeof(internal::O1HeapInstance) + O1HEAP_ALIGNMENT - 1U> arena{};
+    auto heap = init(arena.data(), std::size(arena));
+    REQUIRE(heap != nullptr);
+
+    constexpr auto X = true;   // used
+    constexpr auto O = false;  // free
+
+    // Allocate some initial blocks
+    auto a = heap->allocate(32U);
+    REQUIRE(a != nullptr);
+    heap->matchFragments({
+        {X, 64},
+        {O, 4032},
+    });
+
+    // Fill with pattern
+    for (std::size_t i = 0; i < 32U; i++)
+    {
+        reinterpret_cast<std::byte*>(a)[i] = std::byte(i & 0xFF);
+    }
+
+    auto b = heap->allocate(32U);
+    REQUIRE(b != nullptr);
+    heap->matchFragments({
+        {X, 64},
+        {X, 64},
+        {O, 3968},
+    });
+
+    auto c = heap->allocate(32U);
+    REQUIRE(c != nullptr);
+    heap->matchFragments({
+        {X, 64},
+        {X, 64},
+        {X, 64},
+        {O, 3904},
+    });
+
+    // Test shrinking - should keep same pointer and fragment structure
+    auto a_new = heap->reallocate(a, 16U);
+    REQUIRE(a_new == a);
+    heap->matchFragments({
+        {X, 64},  // Still the same size fragment
+        {X, 64},
+        {X, 64},
+        {O, 3904},
+    });
+
+    // Verify data integrity after shrink
+    for (std::size_t i = 0; i < 16U; i++)
+    {
+        REQUIRE(reinterpret_cast<std::byte*>(a_new)[i] == std::byte(i & 0xFF));
+    }
+
+    // Free middle block
+    heap->free(b);
+    heap->matchFragments({
+        {X, 64},
+        {O, 64},
+        {X, 64},
+        {O, 3904},
+    });
+
+    // Test in-place expansion into adjacent free space
+    a_new = heap->reallocate(a, 80U);
+    REQUIRE(a_new == a);  // Should expand in place
+    heap->matchFragments({
+        {X, 128},  // Expanded by consuming the free fragment
+        {X, 64},
+        {O, 3904},
+    });
+
+    // Verify data integrity after expansion
+    for (std::size_t i = 0; i < 32U; i++)
+    {
+        REQUIRE(reinterpret_cast<std::byte*>(a_new)[i] == std::byte(i & 0xFF));
+    }
+
+    // Free c to create more space
+    heap->free(c);
+    heap->matchFragments({
+        {X, 128},
+        {O, 3968},  // Merged free blocks
+    });
+
+    // Test reallocation that requires moving (too large to fit in current spot)
+    auto a_moved = heap->reallocate(a_new, 2000U);
+    REQUIRE(a_moved != nullptr);
+    // Fragment structure depends on where it was allocated
+    REQUIRE(heap->diagnostics.allocated >= 2048U);
+
+    // Verify data integrity after move
+    for (std::size_t i = 0; i < 32U; i++)
+    {
+        REQUIRE(reinterpret_cast<std::byte*>(a_moved)[i] == std::byte(i & 0xFF));
+    }
+
+    heap->free(a_moved);
+    heap->matchFragments({
+        {O, 4096},  // Everything freed and merged
+    });
+
     REQUIRE(heap->doInvariantsHold());
 }
 
