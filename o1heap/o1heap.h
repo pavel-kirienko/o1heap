@@ -112,6 +112,19 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount);
 /// The function is executed in constant time.
 void o1heapFree(O1HeapInstance* const handle, void* const pointer);
 
+/// The semantics follows realloc() with additional guarantees the full list of which is provided below.
+///
+/// If the pointer is NULL, the function behaves like o1heapAllocate().
+/// If the new_amount is zero, the function behaves like o1heapFree() and returns NULL.
+/// If the pointer does not point to a previously allocated block and is not NULL, the behavior is undefined.
+///
+/// The function will not move the fragment unless the new size is strictly greater than the current size.
+/// If expansion is necessary, the function will first attempt to expand into the next free fragment
+/// without copying data, if such a fragment exists and is suitable.
+///
+/// The function is executed in constant time.
+void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const size_t new_amount);
+
 /// Obtains the maximum theoretically possible allocation size for this heap instance.
 /// This is useful when implementing std::allocator_traits<Alloc>::max_size.
 size_t o1heapGetMaxAllocationSize(const O1HeapInstance* const handle);
