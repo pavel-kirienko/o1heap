@@ -122,7 +122,8 @@ void o1heapFree(O1HeapInstance* const handle, void* const pointer);
 /// If expansion is necessary, the function will first attempt to expand into the next free fragment
 /// without copying data, if such a fragment exists and is suitable.
 ///
-/// The function is executed in constant time.
+/// The time complexity is O(min(old_size, new_size)) due to the data copying operation when reallocation
+/// requires moving the fragment. All other operations are constant time.
 void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const size_t new_amount);
 
 /// Obtains the maximum theoretically possible allocation size for this heap instance.
