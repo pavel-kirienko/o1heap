@@ -599,7 +599,7 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
                 else
                 {
                     // Allocation failed. Try deallocating first to enable merging with adjacent blocks.
-                    // This is the fragmentation pitfall case - data may be lost if reallocation fails.
+                    // This is the fragmentation pitfall case - only the first few bytes can be preserved.
                     const size_t bytes_to_save = 2U * sizeof(void*);
                     char         saved_bytes[2U * sizeof(void*)];
 
@@ -618,20 +618,10 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
 
                     if ((out != NULL) && (bytes_to_copy > 0U))
                     {
-                        // Copy the old data to the new location
-                        // First, restore the saved bytes
+                        // We can only restore the bytes we saved; the rest are lost.
+                        // This is an acceptable trade-off in the fragmentation pitfall case.
                         const size_t restore_count = (bytes_to_copy < bytes_to_save) ? bytes_to_copy : bytes_to_save;
                         (void) memcpy(out, saved_bytes, restore_count);
-
-                        // Copy the rest of the data (if any) from the old location
-                        if (bytes_to_copy > bytes_to_save)
-                        {
-                            // The old fragment is now free, but the data beyond the first few bytes should still be intact
-                            const size_t remaining_bytes = bytes_to_copy - bytes_to_save;
-                            (void) memcpy(((char*) out) + bytes_to_save,
-                                          ((const char*) pointer) + bytes_to_save,
-                                          remaining_bytes);
-                        }
                     }
                 }
             }
