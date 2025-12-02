@@ -593,7 +593,7 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
                 {
                     // Save the beginning of the user data that will be overwritten by free
                     const size_t save_count = (bytes_to_copy < bytes_to_save) ? bytes_to_copy : bytes_to_save;
-                    (void) memcpy(&saved_bytes[0], pointer, save_count);
+                    (void) memcpy(saved_bytes, pointer, save_count);
                 }
 
                 // Free the old block - this enables merging with adjacent free blocks
@@ -607,7 +607,7 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
                     // Copy the old data to the new location
                     // First, restore the saved bytes
                     const size_t restore_count = (bytes_to_copy < bytes_to_save) ? bytes_to_copy : bytes_to_save;
-                    (void) memcpy(out, &saved_bytes[0], restore_count);
+                    (void) memcpy(out, saved_bytes, restore_count);
 
                     // Copy the rest of the data (if any) from the old location
                     if (bytes_to_copy > bytes_to_save)
