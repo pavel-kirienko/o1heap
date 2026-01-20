@@ -47,6 +47,29 @@ and its internal data structures are not damaged.
 
 Avoid concurrent access to the heap. Use locking if necessary.
 
+### Example
+
+```c
+#include "o1heap.h"
+#include <stdalign.h>
+
+static alignas(O1HEAP_ALIGNMENT) unsigned char heap_arena[32768];
+
+int main(void)
+{
+    O1HeapInstance* heap = o1heapInit(heap_arena, sizeof(heap_arena));
+    if (heap == NULL) {
+        return 1;  // Initialization failed -- arena not aligned or too small
+    }
+    void* ptr = o1heapAllocate(heap, 200);
+    if (ptr != NULL) {
+        // Use the allocated memory...
+        o1heapFree(heap, ptr);
+    }
+    return 0;
+}
+```
+
 ### Build configuration options
 
 The preprocessor options given below can be overridden to fine-tune the implementation.
