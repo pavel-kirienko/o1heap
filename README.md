@@ -258,7 +258,7 @@ Please refer to the continuous integration configuration to see how to invoke th
 
 ### Releasing
 
-Update the version number macro in the header file and create a new git tag like `1.0`.
+Update the version number macro in the header file and create a new semver git tag like `2.3.0`.
 
 ### MISRA compliance
 
@@ -284,6 +284,10 @@ The list of intentional deviations can be obtained by simply searching the codeb
 - [Динамическая память в системах жёсткого реального времени](https://habr.com/ru/post/486650/) -- issues with dynamic memory allocation in modern embedded RTOS and related popular misconceptions.
 
 ## Changelog
+
+### v2.3
+
+WORK IN PROGRESS
 
 ### v2.2
 
