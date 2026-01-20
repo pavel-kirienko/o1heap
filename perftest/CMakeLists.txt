@@ -22,6 +22,8 @@ add_executable(o1heap_perftest
   ${CMAKE_CURRENT_LIST_DIR}/../o1heap/o1heap.c
 )
 
+pico_set_binary_type(o1heap_perftest copy_to_ram)
+
 target_include_directories(o1heap_perftest PRIVATE
   ${CMAKE_CURRENT_LIST_DIR}/../o1heap
 )
