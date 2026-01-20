@@ -22,9 +22,9 @@ O1Heap is implemented in C99/C11 following MISRA C:2012; it is extremely compact
 understand and validate.
 It is designed to be usable across all conventional architectures out of the box, from 8-bit to 64-bit systems.
 
-As a reference, on an RP2350 executed from SRAM, allocation takes 84~107 cycles and deallocation takes 61~94 cycles —
-always, irrespective of the preceding (de)allocation sequence, fragmentation, or memory usage —
-making it one of the fastest allocators out there.
+⚡ As a reference, on an RP2350 CM33, allocation takes ≈126±20 cycles and deallocation takes ≈93±30 cycles —
+*always*, irrespective of the size, preceding (de)allocation sequence, fragmentation, or memory usage —
+making it not only suitable for hard real-time but also one of the fastest allocators out there.
 Similar results have been observed on a Cortex M4 MCU.
 
 ## 📚 Usage
