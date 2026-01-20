@@ -81,9 +81,9 @@ struct Fragment final
 
     [[nodiscard]] auto getBinIndex() const -> std::uint8_t
     {
-        const auto  size    = header.getSize();
-        const bool  aligned = (size % SizeMin) == 0U;
-        const bool  nonempty = size >= SizeMin;
+        const auto size     = header.getSize();
+        const bool aligned  = (size % SizeMin) == 0U;
+        const bool nonempty = size >= SizeMin;
         if (aligned && nonempty)
         {
             return static_cast<std::uint8_t>(std::floor(std::log2(size / SizeMin)));
