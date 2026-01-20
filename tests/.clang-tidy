@@ -29,6 +29,5 @@ Checks: >-
   -readability-identifier-length,
 WarningsAsErrors: '*'
 HeaderFilterRegex: 'internal.hpp'
-AnalyzeTemporaryDtors: false
 FormatStyle: file
 ...

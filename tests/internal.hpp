@@ -431,7 +431,7 @@ inline auto FragmentHeader::getSize(const O1HeapInstance* heap) const -> std::si
     return static_cast<std::size_t>(heap->arena_end - self_as_char);
 }
 
-static_assert(O1HEAP_VERSION_MAJOR == 2);
+static_assert(O1HEAP_VERSION_MAJOR == 3);
 
 }  // namespace internal
 
