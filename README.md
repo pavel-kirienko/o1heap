@@ -244,28 +244,13 @@ on every allocation and deallocation. Please refer to `o1heap.h` for usage detai
 
 ## Development
 
-### Dependencies
+Please refer to the continuous integration configuration to see how to build and test the library.
+The code must be `clang-format`ted.
 
-The following tools should be available locally to conduct library development:
+To release a new version, update the version number macro in the header file and create a new semver git tag like
+`2.3.0`. Publish a new release on GitHub as well.
 
-- Modern versions of CMake, GCC, Clang, and Clang-Tools.
-- An AMD64 machine.
-- (optional) Valgrind.
-
-### Testing
-
-Please refer to the continuous integration configuration to see how to invoke the tests.
-
-### Releasing
-
-Update the version number macro in the header file and create a new semver git tag like `2.3.0`.
-
-### MISRA compliance
-
-MISRA compliance is enforced with the help of:
-
-- Clang-Tidy -- invoked automatically during the normal build process.
-
+MISRA compliance is enforced with the help of Clang-Tidy.
 Every intentional deviation shall be documented and justified in-place using the following notation,
 followed by the appropriate static analyser warning suppression statement:
 
@@ -273,8 +258,6 @@ followed by the appropriate static analyser warning suppression statement:
 // Intentional violation of MISRA: <valid reason here>
 // NOLINT(*-specific-rule)
 ```
-
-The list of intentional deviations can be obtained by simply searching the codebase for the above comments.
 
 ## Further reading
 
