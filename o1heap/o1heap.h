@@ -28,10 +28,10 @@ extern "C" {
 #endif
 
 /// The semantic version number of this distribution.
-#define O1HEAP_VERSION_MAJOR 2
+#define O1HEAP_VERSION_MAJOR 3
 
 /// The guaranteed alignment depends on the platform pointer width.
-#define O1HEAP_ALIGNMENT (sizeof(void*) * 4U)
+#define O1HEAP_ALIGNMENT (sizeof(void*) * 2U)
 
 /// The definition is private, so the user code can only operate on pointers. This is done to enforce encapsulation.
 typedef struct O1HeapInstance O1HeapInstance;

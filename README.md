@@ -218,8 +218,8 @@ The size of the overhead $a$ is represented in the codebase as `O1HEAP_ALIGNMENT
 because it also dictates the allocated memory pointer alignment.
 Due to the overhead, the maximum amount of memory available to the application per allocation is
 $F^\prime{}(r) = F(r) - a$.
-The amount of the overhead per allocation and, therefore, pointer alignment is 4×(pointer width);
-e.g., for a 32-bit platform, the overhead/alignment is 16 bytes (128 bits).
+The amount of the overhead per allocation and, therefore, pointer alignment is 2×(pointer width);
+e.g., for a 32-bit platform, the overhead/alignment is 8 bytes (64 bits).
 
 From the above follows that $F(r) \ge 2 a$.
 Remember that $r>0$ -- following the semantics of `malloc(..)`,
@@ -289,9 +289,11 @@ followed by the appropriate static analyser warning suppression statement:
 
 ## 📆 Changelog
 
-### v2.3
+### v3.0
 
-WORK IN PROGRESS
+- Reduce per-fragment overhead from 4×(pointer width) to 2×(pointer width) by packing the fragment header.
+  On 32-bit platforms, `O1HEAP_ALIGNMENT` -- which equals the per-fragment overhead -- is now 8 bytes instead of 16.
+- Added a native performance testing suite for RP2350.
 
 ### v2.2
 

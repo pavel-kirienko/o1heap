@@ -19,6 +19,7 @@
 #include "o1heap.h"
 #include <assert.h>
 #include <limits.h>
+#include <stdint.h>
 
 // ---------------------------------------- BUILD CONFIGURATION OPTIONS ----------------------------------------
 
@@ -128,14 +129,14 @@ static_assert((FRAGMENT_SIZE_MAX & (FRAGMENT_SIZE_MAX - 1U)) == 0U, "Not a power
 
 typedef struct Fragment Fragment;
 
+/// Size is computed dynamically from (next - this) or (arena_end - this) for the last fragment.
 typedef struct FragmentHeader
 {
-    Fragment* next;
-    Fragment* prev;
-    size_t    size;
-    bool      used;
+    Fragment* next;       ///< Next fragment in address order; NULL if this is the last fragment.
+    uintptr_t prev_used;  ///< Prev pointer in upper bits, 'used' flag in bit 0.
 } FragmentHeader;
-static_assert(sizeof(FragmentHeader) <= O1HEAP_ALIGNMENT, "Memory layout error");
+static_assert(sizeof(FragmentHeader) == sizeof(void*) * 2U, "Memory layout error");
+static_assert(sizeof(FragmentHeader) == O1HEAP_ALIGNMENT, "Memory layout error");
 
 struct Fragment
 {
@@ -150,6 +151,8 @@ struct O1HeapInstance
 {
     Fragment* bins[NUM_BINS_MAX];  ///< Smallest fragments are in the bin at index 0.
     size_t    nonempty_bin_mask;   ///< Bit 1 represents a non-empty bin; bin at index 0 is for the smallest fragments.
+
+    char* arena_end;  ///< Points past the last byte of the arena; used for computing size of the last fragment.
 
     O1HeapDiagnostics diagnostics;
 };
@@ -192,16 +195,64 @@ O1HEAP_PRIVATE size_t roundUpToPowerOf2(const size_t x)
     return ((size_t) 1U) << ((sizeof(x) * CHAR_BIT) - ((uint_fast8_t) O1HEAP_CLZ(x - 1U)));
 }
 
+// ---------------------------------------- FRAGMENT HEADER ACCESSORS ----------------------------------------
+
+O1HEAP_PRIVATE Fragment* fragGetNext(const Fragment* const frag)
+{
+    return frag->header.next;
+}
+
+O1HEAP_PRIVATE Fragment* fragGetPrev(const Fragment* const frag)
+{
+    return (Fragment*) (frag->header.prev_used & ~(uintptr_t) 1U);
+}
+
+O1HEAP_PRIVATE bool fragIsUsed(const Fragment* const frag)
+{
+    return (frag->header.prev_used & (uintptr_t) 1U) != 0U;
+}
+
+O1HEAP_PRIVATE size_t fragGetSize(const O1HeapInstance* const handle, const Fragment* const frag)
+{
+    return (frag->header.next != NULL) ?
+        (size_t) (((const char*) frag->header.next) - ((const char*) frag)) :
+        (size_t) (handle->arena_end - ((const char*) frag));
+}
+
+O1HEAP_PRIVATE void fragSetNext(Fragment* const frag, Fragment* const value)
+{
+    frag->header.next = value;
+}
+
+O1HEAP_PRIVATE void fragSetPrev(Fragment* const frag, Fragment* const value)
+{
+    frag->header.prev_used = (frag->header.prev_used & (uintptr_t) 1U) | (uintptr_t) value;
+}
+
+O1HEAP_PRIVATE void fragSetUsed(Fragment* const frag, const bool value)
+{
+    if (value)
+    {
+        frag->header.prev_used |= (uintptr_t) 1U;
+    }
+    else
+    {
+        frag->header.prev_used &= ~(uintptr_t) 1U;
+    }
+}
+
+// ---------------------------------------- FRAGMENT MANAGEMENT ----------------------------------------
+
 /// Links two fragments so that their next/prev pointers point to each other; left goes before right.
 O1HEAP_PRIVATE void interlink(Fragment* const left, Fragment* const right)
 {
     if (O1HEAP_LIKELY(left != NULL))
     {
-        left->header.next = right;
+        fragSetNext(left, right);
     }
     if (O1HEAP_LIKELY(right != NULL))
     {
-        right->header.prev = left;
+        fragSetPrev(right, left);
     }
 }
 
@@ -210,9 +261,10 @@ O1HEAP_PRIVATE void rebin(O1HeapInstance* const handle, Fragment* const fragment
 {
     O1HEAP_ASSERT(handle != NULL);
     O1HEAP_ASSERT(fragment != NULL);
-    O1HEAP_ASSERT(fragment->header.size >= FRAGMENT_SIZE_MIN);
-    O1HEAP_ASSERT((fragment->header.size % FRAGMENT_SIZE_MIN) == 0U);
-    const uint_fast8_t idx = log2Floor(fragment->header.size / FRAGMENT_SIZE_MIN);  // Round DOWN when inserting.
+    const size_t fragment_size = fragGetSize(handle, fragment);
+    O1HEAP_ASSERT(fragment_size >= FRAGMENT_SIZE_MIN);
+    O1HEAP_ASSERT((fragment_size % FRAGMENT_SIZE_MIN) == 0U);
+    const uint_fast8_t idx = log2Floor(fragment_size / FRAGMENT_SIZE_MIN);  // Round DOWN when inserting.
     O1HEAP_ASSERT(idx < NUM_BINS_MAX);
     // Add the new fragment to the beginning of the bin list.
     // I.e., each allocation will be returning the most-recently-used fragment -- good for caching.
@@ -231,9 +283,10 @@ O1HEAP_PRIVATE void unbin(O1HeapInstance* const handle, const Fragment* const fr
 {
     O1HEAP_ASSERT(handle != NULL);
     O1HEAP_ASSERT(fragment != NULL);
-    O1HEAP_ASSERT(fragment->header.size >= FRAGMENT_SIZE_MIN);
-    O1HEAP_ASSERT((fragment->header.size % FRAGMENT_SIZE_MIN) == 0U);
-    const uint_fast8_t idx = log2Floor(fragment->header.size / FRAGMENT_SIZE_MIN);  // Round DOWN when removing.
+    const size_t fragment_size = fragGetSize(handle, fragment);
+    O1HEAP_ASSERT(fragment_size >= FRAGMENT_SIZE_MIN);
+    O1HEAP_ASSERT((fragment_size % FRAGMENT_SIZE_MIN) == 0U);
+    const uint_fast8_t idx = log2Floor(fragment_size / FRAGMENT_SIZE_MIN);  // Round DOWN when removing.
     O1HEAP_ASSERT(idx < NUM_BINS_MAX);
     // Remove the bin from the free fragment list.
     if (O1HEAP_LIKELY(fragment->next_free != NULL))
@@ -288,15 +341,18 @@ O1HeapInstance* o1heapInit(void* const base, const size_t size)
         O1HEAP_ASSERT((capacity % FRAGMENT_SIZE_MIN) == 0);
         O1HEAP_ASSERT((capacity >= FRAGMENT_SIZE_MIN) && (capacity <= FRAGMENT_SIZE_MAX));
 
+        // Store the arena end pointer for computing size of the last fragment.
+        char* const arena_start = ((char*) base) + INSTANCE_SIZE_PADDED;
+        out->arena_end          = arena_start + capacity;
+
         // Initialize the root fragment.
-        Fragment* const frag = (Fragment*) (void*) (((char*) base) + INSTANCE_SIZE_PADDED);
+        Fragment* const frag = (Fragment*) (void*) arena_start;
         O1HEAP_ASSERT((((size_t) frag) % O1HEAP_ALIGNMENT) == 0U);
-        frag->header.next = NULL;
-        frag->header.prev = NULL;
-        frag->header.size = capacity;
-        frag->header.used = false;
-        frag->next_free   = NULL;
-        frag->prev_free   = NULL;
+        fragSetNext(frag, NULL);
+        fragSetPrev(frag, NULL);
+        fragSetUsed(frag, false);
+        frag->next_free = NULL;
+        frag->prev_free = NULL;
         rebin(out, frag);
         O1HEAP_ASSERT(out->nonempty_bin_mask != 0U);
 
@@ -347,23 +403,22 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
             // The bin we found shall not be empty, otherwise it's a state divergence (memory corruption?).
             Fragment* const frag = handle->bins[bin_index];
             O1HEAP_ASSERT(frag != NULL);
-            O1HEAP_ASSERT(frag->header.size >= fragment_size);
-            O1HEAP_ASSERT((frag->header.size % FRAGMENT_SIZE_MIN) == 0U);
-            O1HEAP_ASSERT(!frag->header.used);
+            const size_t frag_size = fragGetSize(handle, frag);
+            O1HEAP_ASSERT(frag_size >= fragment_size);
+            O1HEAP_ASSERT((frag_size % FRAGMENT_SIZE_MIN) == 0U);
+            O1HEAP_ASSERT(!fragIsUsed(frag));
             unbin(handle, frag);
 
             // Split the fragment if it is too large.
-            const size_t leftover = frag->header.size - fragment_size;
-            frag->header.size     = fragment_size;
+            const size_t leftover = frag_size - fragment_size;
             O1HEAP_ASSERT(leftover < handle->diagnostics.capacity);  // Overflow check.
             O1HEAP_ASSERT(leftover % FRAGMENT_SIZE_MIN == 0U);       // Alignment check.
             if (O1HEAP_LIKELY(leftover >= FRAGMENT_SIZE_MIN))
             {
                 Fragment* const new_frag = (Fragment*) (void*) (((char*) frag) + fragment_size);
                 O1HEAP_ASSERT(((size_t) new_frag) % O1HEAP_ALIGNMENT == 0U);
-                new_frag->header.size = leftover;
-                new_frag->header.used = false;
-                interlink(new_frag, frag->header.next);
+                fragSetUsed(new_frag, false);
+                interlink(new_frag, fragGetNext(frag));
                 interlink(frag, new_frag);
                 rebin(handle, new_frag);
             }
@@ -378,11 +433,11 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
             }
 
             // Finalize the fragment we just allocated.
-            O1HEAP_ASSERT(frag->header.size >= amount + O1HEAP_ALIGNMENT);
-            frag->header.used = true;
+            O1HEAP_ASSERT(fragGetSize(handle, frag) >= amount + O1HEAP_ALIGNMENT);
+            fragSetUsed(frag, true);
 
             out = ((char*) frag) + O1HEAP_ALIGNMENT;
-            O1HEAP_TRACE_ALLOCATE(handle, out, frag->header.size);
+            O1HEAP_TRACE_ALLOCATE(handle, out, fragGetSize(handle, frag));
         }
         else
         {
@@ -420,54 +475,48 @@ void o1heapFree(O1HeapInstance* const handle, void* const pointer)
         O1HEAP_ASSERT(((size_t) frag) >= (((size_t) handle) + INSTANCE_SIZE_PADDED));
         O1HEAP_ASSERT(((size_t) frag) <=
                       (((size_t) handle) + INSTANCE_SIZE_PADDED + handle->diagnostics.capacity - FRAGMENT_SIZE_MIN));
-        O1HEAP_ASSERT(frag->header.used);  // Catch double-free
-        O1HEAP_ASSERT(((size_t) frag->header.next) % sizeof(Fragment*) == 0U);
-        O1HEAP_ASSERT(((size_t) frag->header.prev) % sizeof(Fragment*) == 0U);
-        O1HEAP_ASSERT(frag->header.size >= FRAGMENT_SIZE_MIN);
-        O1HEAP_ASSERT(frag->header.size <= handle->diagnostics.capacity);
-        O1HEAP_ASSERT((frag->header.size % FRAGMENT_SIZE_MIN) == 0U);
+        O1HEAP_ASSERT(fragIsUsed(frag));  // Catch double-free
+        O1HEAP_ASSERT(((size_t) fragGetNext(frag)) % sizeof(Fragment*) == 0U);
+        O1HEAP_ASSERT(((size_t) fragGetPrev(frag)) % sizeof(Fragment*) == 0U);
+        const size_t frag_size = fragGetSize(handle, frag);
+        O1HEAP_ASSERT(frag_size >= FRAGMENT_SIZE_MIN);
+        O1HEAP_ASSERT(frag_size <= handle->diagnostics.capacity);
+        O1HEAP_ASSERT((frag_size % FRAGMENT_SIZE_MIN) == 0U);
 
-        O1HEAP_TRACE_FREE(handle, pointer, frag->header.size);
+        O1HEAP_TRACE_FREE(handle, pointer, frag_size);
 
         // Even if we're going to drop the fragment later, mark it free anyway to prevent double-free.
-        frag->header.used = false;
+        fragSetUsed(frag, false);
 
         // Update the diagnostics. It must be done before merging because it invalidates the fragment size information.
-        O1HEAP_ASSERT(handle->diagnostics.allocated >= frag->header.size);  // Heap corruption check.
-        handle->diagnostics.allocated -= frag->header.size;
+        O1HEAP_ASSERT(handle->diagnostics.allocated >= frag_size);  // Heap corruption check.
+        handle->diagnostics.allocated -= frag_size;
 
         // Merge with siblings and insert the returned fragment into the appropriate bin and update metadata.
-        Fragment* const prev       = frag->header.prev;
-        Fragment* const next       = frag->header.next;
-        const bool      join_left  = (prev != NULL) && (!prev->header.used);
-        const bool      join_right = (next != NULL) && (!next->header.used);
+        Fragment* const prev       = fragGetPrev(frag);
+        Fragment* const next       = fragGetNext(frag);
+        const bool      join_left  = (prev != NULL) && (!fragIsUsed(prev));
+        const bool      join_right = (next != NULL) && (!fragIsUsed(next));
         if (join_left && join_right)  // [ prev ][ this ][ next ] => [ ------- prev ------- ]
         {
             unbin(handle, prev);
             unbin(handle, next);
-            prev->header.size += frag->header.size + next->header.size;
-            frag->header.size = 0;  // Invalidate the dropped fragment headers to prevent double-free.
-            next->header.size = 0;
-            O1HEAP_ASSERT((prev->header.size % FRAGMENT_SIZE_MIN) == 0U);
-            interlink(prev, next->header.next);
+            O1HEAP_ASSERT((fragGetSize(handle, prev) % FRAGMENT_SIZE_MIN) == 0U);  // After merge.
+            interlink(prev, fragGetNext(next));
             rebin(handle, prev);
         }
         else if (join_left)  // [ prev ][ this ][ next ] => [ --- prev --- ][ next ]
         {
             unbin(handle, prev);
-            prev->header.size += frag->header.size;
-            frag->header.size = 0;
-            O1HEAP_ASSERT((prev->header.size % FRAGMENT_SIZE_MIN) == 0U);
+            O1HEAP_ASSERT((fragGetSize(handle, prev) % FRAGMENT_SIZE_MIN) == 0U);  // After merge.
             interlink(prev, next);
             rebin(handle, prev);
         }
         else if (join_right)  // [ prev ][ this ][ next ] => [ prev ][ --- this --- ]
         {
             unbin(handle, next);
-            frag->header.size += next->header.size;
-            next->header.size = 0;
-            O1HEAP_ASSERT((frag->header.size % FRAGMENT_SIZE_MIN) == 0U);
-            interlink(frag, next->header.next);
+            O1HEAP_ASSERT((fragGetSize(handle, frag) % FRAGMENT_SIZE_MIN) == 0U);  // After merge.
+            interlink(frag, fragGetNext(next));
             rebin(handle, frag);
         }
         else

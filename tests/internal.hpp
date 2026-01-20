@@ -42,18 +42,23 @@ auto roundUpToPowerOf2(const std::size_t x) -> std::size_t;
 
 struct Fragment;
 
+/// Forward declaration for O1HeapInstance (needed for getSize).
+struct O1HeapInstance;
+
+/// The fragment header is packed into two pointer-sized words.
+/// Size is computed dynamically from pointer arithmetic.
 struct FragmentHeader final
 {
     [[nodiscard]] auto getNext() const -> Fragment* { return next_; }
-    [[nodiscard]] auto getPrev() const -> Fragment* { return prev_; }
-    [[nodiscard]] auto getSize() const -> std::size_t { return size_; }
-    [[nodiscard]] auto isUsed() const -> bool { return used_; }
+    [[nodiscard]] auto getPrev() const -> Fragment* { return reinterpret_cast<Fragment*>(prev_used_ & ~std::uintptr_t{1}); }
+    [[nodiscard]] auto isUsed() const -> bool { return (prev_used_ & std::uintptr_t{1}) != 0U; }
+
+    /// Size must be computed from pointer arithmetic; requires the heap instance for the last fragment.
+    [[nodiscard]] auto getSize(const O1HeapInstance* heap) const -> std::size_t;
 
 private:
-    Fragment*   next_ = nullptr;
-    Fragment*   prev_ = nullptr;
-    std::size_t size_ = 0U;
-    bool        used_ = false;
+    Fragment*     next_      = nullptr;  ///< Next fragment in address order.
+    std::uintptr_t prev_used_ = 0U;       ///< Prev pointer in upper bits, 'used' flag in bit 0.
 };
 
 struct Fragment final
@@ -79,9 +84,9 @@ struct Fragment final
             reinterpret_cast<const void*>(reinterpret_cast<const std::byte*>(memory) - O1HEAP_ALIGNMENT));
     }
 
-    [[nodiscard]] auto getBinIndex() const -> std::uint8_t
+    [[nodiscard]] auto getBinIndex(const O1HeapInstance* heap) const -> std::uint8_t
     {
-        const auto size     = header.getSize();
+        const auto size     = header.getSize(heap);
         const bool aligned  = (size % SizeMin) == 0U;
         const bool nonempty = size >= SizeMin;
         if (aligned && nonempty)
@@ -91,12 +96,12 @@ struct Fragment final
         throw std::logic_error("Invalid fragment size");
     }
 
-    void validate() const
+    void validate(const O1HeapInstance* heap) const
     {
         const auto address = reinterpret_cast<std::size_t>(this);
         REQUIRE((address % sizeof(void*)) == 0U);
 
-        const auto size = header.getSize();
+        const auto size = header.getSize(heap);
         const auto next = header.getNext();
         const auto prev = header.getPrev();
         const auto used = header.isUsed();
@@ -157,6 +162,8 @@ struct O1HeapInstance final
 
     std::size_t nonempty_bin_mask = 0;
 
+    char* arena_end = nullptr;  ///< Points past the last byte of the arena.
+
     /// The same data is available via getDiagnostics(). The duplication is intentional.
     O1HeapDiagnostics diagnostics{};
 
@@ -166,7 +173,7 @@ struct O1HeapInstance final
         const auto out = o1heapAllocate(reinterpret_cast<::O1HeapInstance*>(this), amount);
         if (out != nullptr)
         {
-            Fragment::constructFromAllocatedMemory(out).validate();
+            Fragment::constructFromAllocatedMemory(out).validate(this);
         }
         validate();
         return out;
@@ -207,7 +214,7 @@ struct O1HeapInstance final
         }
         const auto frag = reinterpret_cast<const Fragment*>(reinterpret_cast<const void*>(ptr));
         // Apply heuristics to make sure the fragment is found correctly.
-        const auto size = frag->header.getSize();
+        const auto size = frag->header.getSize(this);
         const auto next = frag->header.getNext();
         REQUIRE(size >= Fragment::SizeMin);
         REQUIRE(size <= Fragment::SizeMax);
@@ -238,7 +245,7 @@ struct O1HeapInstance final
             const auto [used, size] = item;
             CAPTURE(used, size, frag);
             REQUIRE(frag != nullptr);
-            const auto frag_size = frag->header.getSize();
+            const auto frag_size = frag->header.getSize(this);
             const auto frag_next = frag->header.getNext();
             REQUIRE(frag->header.isUsed() == used);
             CAPTURE(frag_size);
@@ -263,7 +270,7 @@ struct O1HeapInstance final
         auto frag = getFirstFragment();
         do
         {
-            const auto size_blocks = frag->header.getSize() / Fragment::SizeMin;
+            const auto size_blocks = frag->header.getSize(this) / Fragment::SizeMin;
             if (frag->header.isUsed())
             {
                 buffer << size_blocks << " ";
@@ -323,8 +330,8 @@ private:
         auto frag = getFirstFragment();
         do
         {
-            frag->validate();
-            const auto frag_size = frag->header.getSize();
+            frag->validate(this);
+            const auto frag_size = frag->header.getSize(this);
             const auto frag_used = frag->header.isUsed();
             REQUIRE(frag_size <= diagnostics.capacity);
 
@@ -339,13 +346,13 @@ private:
                 REQUIRE(total_allocated <= total_size);
                 REQUIRE((total_allocated % Fragment::SizeMin) == 0U);
                 // Ensure no bin links to a used fragment.
-                REQUIRE(bins.at(frag->getBinIndex()) != frag);
+                REQUIRE(bins.at(frag->getBinIndex(this)) != frag);
             }
             else
             {
-                const std::size_t mask = static_cast<std::size_t>(1) << frag->getBinIndex();
+                const std::size_t mask = static_cast<std::size_t>(1) << frag->getBinIndex(this);
                 REQUIRE((nonempty_bin_mask & mask) != 0U);
-                if (bins.at(frag->getBinIndex()) == frag)
+                if (bins.at(frag->getBinIndex(this)) == frag)
                 {
                     REQUIRE((pending_bins & mask) != 0U);
                     pending_bins &= ~mask;
@@ -380,7 +387,7 @@ private:
                 REQUIRE(frag->prev_free == nullptr);  // The first fragment in the segregated list has no prev.
                 do
                 {
-                    const auto frag_size = frag->header.getSize();
+                    const auto frag_size = frag->header.getSize(this);
                     REQUIRE(frag_size >= min);
                     REQUIRE(frag_size <= max);
 
@@ -408,6 +415,18 @@ private:
         REQUIRE((diagnostics.capacity - diagnostics.allocated) == total_free);
     }
 };
+
+/// Implementation of FragmentHeader::getSize() - must be after O1HeapInstance is complete.
+/// Since FragmentHeader is the first member of Fragment, 'this' has the same address as the containing Fragment.
+inline auto FragmentHeader::getSize(const O1HeapInstance* heap) const -> std::size_t
+{
+    const auto* self_as_char = reinterpret_cast<const char*>(this);
+    if (next_ != nullptr)
+    {
+        return static_cast<std::size_t>(reinterpret_cast<const char*>(next_) - self_as_char);
+    }
+    return static_cast<std::size_t>(heap->arena_end - self_as_char);
+}
 
 static_assert(O1HEAP_VERSION_MAJOR == 2);
 
