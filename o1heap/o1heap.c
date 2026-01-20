@@ -214,9 +214,8 @@ O1HEAP_PRIVATE bool fragIsUsed(const Fragment* const frag)
 
 O1HEAP_PRIVATE size_t fragGetSize(const O1HeapInstance* const handle, const Fragment* const frag)
 {
-    return (frag->header.next != NULL) ?
-        (size_t) (((const char*) frag->header.next) - ((const char*) frag)) :
-        (size_t) (handle->arena_end - ((const char*) frag));
+    return (frag->header.next != NULL) ? (size_t) (((const char*) frag->header.next) - ((const char*) frag))
+                                       : (size_t) (handle->arena_end - ((const char*) frag));
 }
 
 O1HEAP_PRIVATE void fragSetNext(Fragment* const frag, Fragment* const value)

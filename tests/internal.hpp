@@ -50,14 +50,17 @@ struct O1HeapInstance;
 struct FragmentHeader final
 {
     [[nodiscard]] auto getNext() const -> Fragment* { return next_; }
-    [[nodiscard]] auto getPrev() const -> Fragment* { return reinterpret_cast<Fragment*>(prev_used_ & ~std::uintptr_t{1}); }
+    [[nodiscard]] auto getPrev() const -> Fragment*
+    {
+        return reinterpret_cast<Fragment*>(prev_used_ & ~std::uintptr_t{1});
+    }
     [[nodiscard]] auto isUsed() const -> bool { return (prev_used_ & std::uintptr_t{1}) != 0U; }
 
     /// Size must be computed from pointer arithmetic; requires the heap instance for the last fragment.
     [[nodiscard]] auto getSize(const O1HeapInstance* heap) const -> std::size_t;
 
 private:
-    Fragment*     next_      = nullptr;  ///< Next fragment in address order.
+    Fragment*      next_      = nullptr;  ///< Next fragment in address order.
     std::uintptr_t prev_used_ = 0U;       ///< Prev pointer in upper bits, 'used' flag in bit 0.
 };
 
