@@ -17,6 +17,7 @@
 cmake_minimum_required(VERSION 3.12)
 project(o1heap_tests C CXX)
 enable_testing()
+set(CMAKE_CTEST_ARGUMENTS "-V")
 
 if (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
     # assert() shall be disabled in release builds to enable testing of bad free() calls.
@@ -100,3 +101,6 @@ gen_test_matrix(
         ""
 )
 gen_test("test_general_c11_x32_trc" "test_general.cpp" "O1HEAP_TRACE=1" c_std_11 "-m32" "-m32")
+
+gen_test("test_api_exhaustive_c11_x64" "test_api_exhaustive.cpp" "" c_std_11 "-m64" "-m64")
+gen_test("test_api_exhaustive_c11_x32" "test_api_exhaustive.cpp" "" c_std_11 "-m32" "-m32")
