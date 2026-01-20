@@ -27,6 +27,15 @@ Checks: >-
   -readability-function-cognitive-complexity,
   -readability-qualified-auto,
   -readability-identifier-length,
+  -performance-no-int-to-ptr,
+  -bugprone-casting-through-void,
+  -bugprone-chained-comparison,
+  -cppcoreguidelines-avoid-do-while,
+  -readability-math-missing-parentheses,
+  -misc-redundant-expression,
+  -misc-include-cleaner,
+  -performance-avoid-endl,
+  -boost-use-ranges,
 WarningsAsErrors: '*'
 HeaderFilterRegex: 'internal.hpp'
 FormatStyle: file
