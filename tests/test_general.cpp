@@ -74,8 +74,8 @@ auto init(void* const base, const std::size_t size)
             else
             {
                 REQUIRE(heap->bins.at(i) != nullptr);
-                REQUIRE(heap->bins.at(i)->header.size >= min);
-                REQUIRE(heap->bins.at(i)->header.size <= max);
+                REQUIRE(heap->bins.at(i)->header.getSize() >= min);
+                REQUIRE(heap->bins.at(i)->header.getSize() <= max);
             }
         }
 
@@ -91,10 +91,10 @@ auto init(void* const base, const std::size_t size)
         REQUIRE(root_fragment != nullptr);
         REQUIRE(root_fragment->next_free == nullptr);
         REQUIRE(root_fragment->prev_free == nullptr);
-        REQUIRE(!root_fragment->header.used);
-        REQUIRE(root_fragment->header.size == heap->diagnostics.capacity);
-        REQUIRE(root_fragment->header.next == nullptr);
-        REQUIRE(root_fragment->header.prev == nullptr);
+        REQUIRE(!root_fragment->header.isUsed());
+        REQUIRE(root_fragment->header.getSize() == heap->diagnostics.capacity);
+        REQUIRE(root_fragment->header.getNext() == nullptr);
+        REQUIRE(root_fragment->header.getPrev() == nullptr);
     }
     return heap;
 }
@@ -190,12 +190,12 @@ TEST_CASE("General: allocate: smallest")
     REQUIRE(heap->getDiagnostics().peak_request_size == 1);
 
     auto& frag = Fragment::constructFromAllocatedMemory(mem);
-    REQUIRE(frag.header.size == (O1HEAP_ALIGNMENT * 2U));
-    REQUIRE(frag.header.next != nullptr);
-    REQUIRE(frag.header.prev == nullptr);
-    REQUIRE(frag.header.used);
-    REQUIRE(frag.header.next->header.size == (heap->diagnostics.capacity - frag.header.size));
-    REQUIRE(!frag.header.next->header.used);
+    REQUIRE(frag.header.getSize() == (O1HEAP_ALIGNMENT * 2U));
+    REQUIRE(frag.header.getNext() != nullptr);
+    REQUIRE(frag.header.getPrev() == nullptr);
+    REQUIRE(frag.header.isUsed());
+    REQUIRE(frag.header.getNext()->header.getSize() == (heap->diagnostics.capacity - frag.header.getSize()));
+    REQUIRE(!frag.header.getNext()->header.isUsed());
 
     heap->free(mem);
     REQUIRE(heap->doInvariantsHold());
@@ -239,10 +239,10 @@ TEST_CASE("General: allocate: size_t overflow")
     REQUIRE(mem != nullptr);
 
     auto& frag = Fragment::constructFromAllocatedMemory(mem);
-    REQUIRE(frag.header.size == Fragment::SizeMax);
-    REQUIRE(frag.header.next == nullptr);
-    REQUIRE(frag.header.prev == nullptr);
-    REQUIRE(frag.header.used);
+    REQUIRE(frag.header.getSize() == Fragment::SizeMax);
+    REQUIRE(frag.header.getNext() == nullptr);
+    REQUIRE(frag.header.getPrev() == nullptr);
+    REQUIRE(frag.header.isUsed());
 
     REQUIRE(heap->getDiagnostics().peak_allocated == Fragment::SizeMax);
     REQUIRE(heap->getDiagnostics().allocated == Fragment::SizeMax);
@@ -282,12 +282,13 @@ TEST_CASE("General: free")
             std::generate_n(reinterpret_cast<std::byte*>(p), amount, getRandomByte);
 
             const auto& frag = Fragment::constructFromAllocatedMemory(p);
-            REQUIRE(frag.header.used);
-            REQUIRE((frag.header.size & (frag.header.size - 1U)) == 0U);
-            REQUIRE(frag.header.size >= (amount + O1HEAP_ALIGNMENT));
-            REQUIRE(frag.header.size <= Fragment::SizeMax);
+            REQUIRE(frag.header.isUsed());
+            const auto frag_size = frag.header.getSize();
+            REQUIRE((frag_size & (frag_size - 1U)) == 0U);
+            REQUIRE(frag_size >= (amount + O1HEAP_ALIGNMENT));
+            REQUIRE(frag_size <= Fragment::SizeMax);
 
-            allocated += frag.header.size;
+            allocated += frag_size;
             peak_allocated    = std::max(peak_allocated, allocated);
             peak_request_size = std::max(peak_request_size, amount);
         }
@@ -312,9 +313,9 @@ TEST_CASE("General: free")
             std::generate_n(reinterpret_cast<std::byte*>(p), O1HEAP_ALIGNMENT, getRandomByte);
 
             const auto& frag = Fragment::constructFromAllocatedMemory(p);
-            REQUIRE(frag.header.used);
-            REQUIRE(allocated >= frag.header.size);
-            allocated -= frag.header.size;
+            REQUIRE(frag.header.isUsed());
+            REQUIRE(allocated >= frag.header.getSize());
+            allocated -= frag.header.getSize();
             heap->free(p);
         }
         else
@@ -505,7 +506,7 @@ TEST_CASE("General: random A")
             std::generate_n(reinterpret_cast<std::byte*>(ptr), amount, getRandomByte);
             pointers.push_back(ptr);
             const auto& frag = Fragment::constructFromAllocatedMemory(ptr);
-            allocated += frag.header.size;
+            allocated += frag.header.getSize();
             peak_allocated = std::max(peak_allocated, allocated);
         }
         else
@@ -532,8 +533,8 @@ TEST_CASE("General: random A")
             {
                 const auto& frag = Fragment::constructFromAllocatedMemory(ptr);
                 frag.validate();
-                REQUIRE(allocated >= frag.header.size);
-                allocated -= frag.header.size;
+                REQUIRE(allocated >= frag.header.getSize());
+                allocated -= frag.header.getSize();
             }
             heap->free(ptr);
         }

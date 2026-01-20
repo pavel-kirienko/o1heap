@@ -44,10 +44,16 @@ struct Fragment;
 
 struct FragmentHeader final
 {
-    Fragment*   next = nullptr;
-    Fragment*   prev = nullptr;
-    std::size_t size = 0U;
-    bool        used = false;
+    [[nodiscard]] auto getNext() const -> Fragment* { return next_; }
+    [[nodiscard]] auto getPrev() const -> Fragment* { return prev_; }
+    [[nodiscard]] auto getSize() const -> std::size_t { return size_; }
+    [[nodiscard]] auto isUsed() const -> bool { return used_; }
+
+private:
+    Fragment*   next_ = nullptr;
+    Fragment*   prev_ = nullptr;
+    std::size_t size_ = 0U;
+    bool        used_ = false;
 };
 
 struct Fragment final
@@ -75,11 +81,12 @@ struct Fragment final
 
     [[nodiscard]] auto getBinIndex() const -> std::uint8_t
     {
-        const bool aligned  = (header.size % SizeMin) == 0U;
-        const bool nonempty = header.size >= SizeMin;
+        const auto  size    = header.getSize();
+        const bool  aligned = (size % SizeMin) == 0U;
+        const bool  nonempty = size >= SizeMin;
         if (aligned && nonempty)
         {
-            return static_cast<std::uint8_t>(std::floor(std::log2(header.size / SizeMin)));
+            return static_cast<std::uint8_t>(std::floor(std::log2(size / SizeMin)));
         }
         throw std::logic_error("Invalid fragment size");
     }
@@ -89,43 +96,48 @@ struct Fragment final
         const auto address = reinterpret_cast<std::size_t>(this);
         REQUIRE((address % sizeof(void*)) == 0U);
 
+        const auto size = header.getSize();
+        const auto next = header.getNext();
+        const auto prev = header.getPrev();
+        const auto used = header.isUsed();
+
         // Size correctness.
-        REQUIRE(header.size >= SizeMin);
-        REQUIRE(header.size <= SizeMax);
-        REQUIRE((header.size % SizeMin) == 0U);
+        REQUIRE(size >= SizeMin);
+        REQUIRE(size <= SizeMax);
+        REQUIRE((size % SizeMin) == 0U);
 
         // Heap fragment interlinking. Free blocks cannot neighbor each other because they are supposed to be merged.
-        if (header.next != nullptr)
+        if (next != nullptr)
         {
-            REQUIRE((header.used || header.next->header.used));
-            const auto adr = reinterpret_cast<std::size_t>(header.next);
+            REQUIRE((used || next->header.isUsed()));
+            const auto adr = reinterpret_cast<std::size_t>(next);
             REQUIRE((adr % sizeof(void*)) == 0U);
-            REQUIRE(header.next->header.prev == this);
+            REQUIRE(next->header.getPrev() == this);
             REQUIRE(adr > address);
             REQUIRE(((adr - address) % SizeMin) == 0U);
         }
-        if (header.prev != nullptr)
+        if (prev != nullptr)
         {
-            REQUIRE((header.used || header.prev->header.used));
-            const auto adr = reinterpret_cast<std::size_t>(header.prev);
+            REQUIRE((used || prev->header.isUsed()));
+            const auto adr = reinterpret_cast<std::size_t>(prev);
             REQUIRE((adr % sizeof(void*)) == 0U);
-            REQUIRE(header.prev->header.next == this);
+            REQUIRE(prev->header.getNext() == this);
             REQUIRE(address > adr);
             REQUIRE(((address - adr) % SizeMin) == 0U);
         }
 
         // Segregated free list interlinking.
-        if (!header.used)
+        if (!used)
         {
             if (next_free != nullptr)
             {
                 REQUIRE(next_free->prev_free == this);
-                REQUIRE(!next_free->header.used);
+                REQUIRE(!next_free->header.isUsed());
             }
             if (prev_free != nullptr)
             {
                 REQUIRE(prev_free->next_free == this);
-                REQUIRE(!prev_free->header.used);
+                REQUIRE(!prev_free->header.isUsed());
             }
         }
     }
@@ -195,12 +207,14 @@ struct O1HeapInstance final
         }
         const auto frag = reinterpret_cast<const Fragment*>(reinterpret_cast<const void*>(ptr));
         // Apply heuristics to make sure the fragment is found correctly.
-        REQUIRE(frag->header.size >= Fragment::SizeMin);
-        REQUIRE(frag->header.size <= Fragment::SizeMax);
-        REQUIRE(frag->header.size <= diagnostics.capacity);
-        REQUIRE((frag->header.size % Fragment::SizeMin) == 0U);
-        REQUIRE(((frag->header.next == nullptr) || (frag->header.next->header.prev == frag)));
-        REQUIRE(frag->header.prev == nullptr);  // The first fragment has no prev!
+        const auto size = frag->header.getSize();
+        const auto next = frag->header.getNext();
+        REQUIRE(size >= Fragment::SizeMin);
+        REQUIRE(size <= Fragment::SizeMax);
+        REQUIRE(size <= diagnostics.capacity);
+        REQUIRE((size % Fragment::SizeMin) == 0U);
+        REQUIRE(((next == nullptr) || (next->header.getPrev() == frag)));
+        REQUIRE(frag->header.getPrev() == nullptr);  // The first fragment has no prev!
         return frag;
     }
 
@@ -224,11 +238,13 @@ struct O1HeapInstance final
             const auto [used, size] = item;
             CAPTURE(used, size, frag);
             REQUIRE(frag != nullptr);
-            REQUIRE(frag->header.used == used);
-            CAPTURE(frag->header.size);
-            REQUIRE((((size == 0U) || (frag->header.size == size))));
-            REQUIRE(((frag->header.next == nullptr) || (frag->header.next->header.prev == frag)));
-            frag = frag->header.next;
+            const auto frag_size = frag->header.getSize();
+            const auto frag_next = frag->header.getNext();
+            REQUIRE(frag->header.isUsed() == used);
+            CAPTURE(frag_size);
+            REQUIRE((((size == 0U) || (frag_size == size))));
+            REQUIRE(((frag_next == nullptr) || (frag_next->header.getPrev() == frag)));
+            frag = frag_next;
         }
         REQUIRE(frag == nullptr);
     }
@@ -247,8 +263,8 @@ struct O1HeapInstance final
         auto frag = getFirstFragment();
         do
         {
-            const auto size_blocks = frag->header.size / Fragment::SizeMin;
-            if (frag->header.used)
+            const auto size_blocks = frag->header.getSize() / Fragment::SizeMin;
+            if (frag->header.isUsed())
             {
                 buffer << size_blocks << " ";
             }
@@ -256,7 +272,7 @@ struct O1HeapInstance final
             {
                 buffer << "[" << size_blocks << "] ";
             }
-            frag = frag->header.next;
+            frag = frag->header.getNext();
         } while (frag != nullptr);
         buffer << "\n";
         return buffer.str();
@@ -308,16 +324,18 @@ private:
         do
         {
             frag->validate();
-            REQUIRE(frag->header.size <= diagnostics.capacity);
+            const auto frag_size = frag->header.getSize();
+            const auto frag_used = frag->header.isUsed();
+            REQUIRE(frag_size <= diagnostics.capacity);
 
             // Update and check the totals early.
-            total_size += frag->header.size;
+            total_size += frag_size;
             REQUIRE(total_size <= Fragment::SizeMax);
             REQUIRE(total_size <= diagnostics.capacity);
             REQUIRE((total_size % Fragment::SizeMin) == 0U);
-            if (frag->header.used)
+            if (frag_used)
             {
-                total_allocated += frag->header.size;
+                total_allocated += frag_size;
                 REQUIRE(total_allocated <= total_size);
                 REQUIRE((total_allocated % Fragment::SizeMin) == 0U);
                 // Ensure no bin links to a used fragment.
@@ -334,7 +352,7 @@ private:
                 }
             }
 
-            frag = frag->header.next;
+            frag = frag->header.getNext();
         } while (frag != nullptr);
 
         // Ensure there were no hanging bin pointers.
@@ -358,24 +376,25 @@ private:
             if (frag != nullptr)
             {
                 REQUIRE((nonempty_bin_mask & mask) != 0U);
-                REQUIRE(!frag->header.used);
+                REQUIRE(!frag->header.isUsed());
                 REQUIRE(frag->prev_free == nullptr);  // The first fragment in the segregated list has no prev.
                 do
                 {
-                    REQUIRE(frag->header.size >= min);
-                    REQUIRE(frag->header.size <= max);
+                    const auto frag_size = frag->header.getSize();
+                    REQUIRE(frag_size >= min);
+                    REQUIRE(frag_size <= max);
 
-                    total_free += frag->header.size;
+                    total_free += frag_size;
 
                     if (frag->next_free != nullptr)
                     {
                         REQUIRE(frag->next_free->prev_free == frag);
-                        REQUIRE(!frag->next_free->header.used);
+                        REQUIRE(!frag->next_free->header.isUsed());
                     }
                     if (frag->prev_free != nullptr)
                     {
                         REQUIRE(frag->prev_free->next_free == frag);
-                        REQUIRE(!frag->prev_free->header.used);
+                        REQUIRE(!frag->prev_free->header.isUsed());
                     }
 
                     frag = frag->next_free;
