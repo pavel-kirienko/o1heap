@@ -114,7 +114,7 @@ which is likely to significantly degrade the performance of the library.
 
 #### O1HEAP_TRACE
 
-This option is intended for advanced diagnostics and may be not useful in most applications.
+This option is intended for advanced diagnostics and may not be useful in most applications.
 If defined and is nonzero, makes o1heap invoke `extern` trace functions (implemented in the application)
 on every allocation and deallocation. Please refer to `o1heap.h` for usage details.
 
