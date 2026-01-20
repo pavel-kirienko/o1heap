@@ -1,30 +1,105 @@
-# O(1) heap
+<div align="center">
+
+# O(1) Heap
+
+_The Fastest Heap in the West <sup>[*](https://x.com/PavelKirienko/status/1922316725195882928)</sup>_
 
 [![Main Workflow](https://github.com/pavel-kirienko/o1heap/actions/workflows/main.yml/badge.svg)](https://github.com/pavel-kirienko/o1heap/actions/workflows/main.yml)
 
+</div>
+
+-----
+
 O1Heap is a highly deterministic constant-complexity memory allocator designed for
 hard real-time high-integrity embedded systems.
-The name stands for *O(1) heap*.
 
-The allocator offers
-a constant worst-case execution time (WCET) and
-a well-characterized worst-case memory fragmentation (consumption) (WCMC).
-The allocator allows the designer to statically prove its temporal and spatial properties for a given application,
-which makes it suitable for use in high-integrity embedded systems.
+The allocator offers a constant worst-case execution time (WCET) that is also extremely low,
+and a well-characterized and easily predictable worst-case memory fragmentation (consumption) (WCMC) bound.
+It allows the designer to statically prove its temporal and spatial properties for a given application,
+which makes it suitable for high-integrity embedded systems.
 
-The codebase is implemented in C99/C11 following MISRA C:2012, with several intended deviations which are unavoidable
-due to the fact that a memory allocator has to rely on inherently unsafe operations to fulfill its purpose.
-The codebase is extremely compact (<500 LoC) and is therefore trivial to validate.
+O1Heap is implemented in C99/C11 following MISRA C:2012; it is extremely compact (<500 LoC) and is trivial to
+understand and validate.
+It is designed to be usable across all conventional architectures out of the box, from 8-bit to 64-bit systems.
 
-The allocator is designed to be portable across all conventional architectures, from 8-bit to 64-bit systems.
+As a reference, on a Cortex-M4 MCU, a (de)allocation takes less than 200 cycles —
+always, irrespective of the preceding (de)allocation sequence, fragmentation, or memory usage —
+making it one of the fastest allocators out there.
 
-## Design
+## 📚 Usage
+
+### Integration
+
+Copy the files `o1heap.c` and `o1heap.h` (find them under `o1heap/`) into your project tree.
+Either keep them in the same directory, or make sure that the directory that contains the header
+is added to the set of include look-up paths.
+No special compiler options are needed to compile the source file (if you find this to be untrue, please open a ticket).
+
+Dedicate a memory arena for the heap, and pass a pointer to it along with its size to the initialization function
+`o1heapInit(..)`.
+
+Allocate and deallocate memory using `o1heapAllocate(..)` and `o1heapFree(..)`.
+Their semantics are compatible with `malloc(..)` and `free(..)` plus additional behavioral guarantees
+(constant timing, bounded fragmentation).
+
+If necessary, periodically invoke `o1heapDoInvariantsHold(..)` to ensure that the heap is functioning correctly
+and its internal data structures are not damaged.
+
+Avoid concurrent access to the heap. Use locking if necessary.
+
+### Build configuration options
+
+The preprocessor options given below can be overridden to fine-tune the implementation.
+None of them are mandatory to use.
+
+#### O1HEAP_CONFIG_HEADER
+
+Define this optional macro like `O1HEAP_CONFIG_HEADER="path/to/my_o1heap_config.h"` to pass build configuration macros.
+This is useful because some build systems do not allow passing function-like macros via command line flags.
+
+#### O1HEAP_ASSERT(x)
+
+The macro `O1HEAP_ASSERT(x)` can be defined to customize the assertion handling or to disable it.
+To disable assertion checks, the macro should expand to `(void)(x)`.
+If not specified, the macro expands to the standard assertion check macro `assert(x)` as defined in `<assert.h>`.
+
+#### O1HEAP_LIKELY(x)
+
+Some of the conditional branching statements are equipped with this annotation to hint the compiler that
+the generated code should be optimized for the case where the corresponding branch is taken.
+This is done to reduce the worst-case execution time.
+
+The macro should expand to a compiler-specific branch weighting intrinsic,
+or to the original expression `(x)` if no such hinting is desired.
+If not specified, the macro expands as follows:
+
+- For some well-known compilers the macro automatically expands to appropriate branch weighting intrinsics.
+  For example, for GCC, Clang, and ARM Compiler, it expands to `__builtin_expect((x), 1)`.
+- For other (unknown) compilers it expands to the original expression with no modifications: `(x)`.
+
+#### O1HEAP_CLZ(x)
+
+The count leading zeros (CLZ) function is used for fast binary logarithm computation (which has to be done
+multiple times per allocation, so its performance is critical).
+Most of the modern processors implement dedicated hardware support for fast CLZ computation,
+which is available via compiler intrinsics.
+
+If not overridden by the user, for some compilers `O1HEAP_CLZ(x)` will expand to the appropriate intrinsic
+(e.g., `__builtin_clzl(x)` for GCC/Clang).
+For other compilers it will default to a slow software implementation,
+which is likely to significantly degrade the performance of the library.
+
+#### O1HEAP_TRACE
+
+This option is intended for advanced diagnostics and may be not useful in most applications.
+If defined and is nonzero, makes o1heap invoke `extern` trace functions (implemented in the application)
+on every allocation and deallocation. Please refer to `o1heap.h` for usage details.
+
+## ⚙️ Design
 
 ### Objectives
 
-The core objective of this library is to provide a dynamic memory allocator that meets the following requirements:
-
-- Memory allocation and deallocation routines are constant-time.
+- Memory allocation and deallocation routines are constant-time and fast.
 
 - For a given peak memory requirement $M$, the worst-case memory consumption $H$ is predictable
   (i.e., the worst-case heap fragmentation is well-characterized).
@@ -43,18 +118,9 @@ This implementation derives from or is based on the ideas presented in:
 - "Worst case fragmentation of first fit and best fit storage allocation strategies" -- J. M. Robson, 1975.
 
 This implementation does not make any non-trivial assumptions about the behavioral properties of the application.
-Per Herter \[2014], it can be described as a *predictably bad allocator*:
-
-> An allocator that provably performs close to its worst-case memory behavior which, in turn,
-> is better than the worst-case behavior of the allocators discussed \[in Herter 2014],
-> but much worse than the memory consumption of these for normal programs without (mostly theoretical)
-> bad (de-)allocation sequences.
-
-While it has been shown to be possible to construct a constant-complexity allocator which demonstrates better
-worst-case and average-case memory requirements by making assumptions about the memory (de-)allocation patterns
-and/or by relying on more sophisticated algorithms, this implementation chooses a conservative approach
-where no assumptions are made about the application and the codebase is kept simple to facilitate its integration
-into verified and validated high-integrity software.
+While it has been shown to be possible to construct a constant-complexity allocator that demonstrates better
+worst- and average-case memory requirements by making assumptions about the memory (de-)allocation patterns,
+this implementation makes no assumptions about the application.
 
 The library implements a modified half-fit algorithm -- a constant-complexity strategy originally proposed by Ogasawara.
 In this implementation, memory is allocated in fragments whose size is rounded up to the next integer power of two.
@@ -173,76 +239,7 @@ and $a$ is the value of `O1HEAP_ALIGNMENT` which is platform-dependent:
 
 ![WCMC](docs/H.png "Total worst-case memory consumption (H) as a function of max fragment size (n) and total memory need (M)")
 
-## Usage
-
-### Integration
-
-Copy the files `o1heap.c` and `o1heap.h` (find them under `o1heap/`) into your project tree.
-Either keep them in the same directory, or make sure that the directory that contains the header
-is added to the set of include look-up paths.
-No special compiler options are needed to compile the source file (if you find this to be untrue, please open a ticket).
-
-Dedicate a memory arena for the heap, and pass a pointer to it along with its size to the initialization function
-`o1heapInit(..)`.
-
-Allocate and deallocate memory using `o1heapAllocate(..)` and `o1heapFree(..)`.
-Their semantics are compatible with `malloc(..)` and `free(..)` plus additional behavioral guarantees
-(constant timing, bounded fragmentation).
-
-If necessary, periodically invoke `o1heapDoInvariantsHold(..)` to ensure that the heap is functioning correctly
-and its internal data structures are not damaged.
-
-Avoid concurrent access to the heap. Use locking if necessary.
-
-### Build configuration options
-
-The preprocessor options given below can be overridden to fine-tune the implementation.
-None of them are mandatory to use.
-
-#### O1HEAP_CONFIG_HEADER
-
-Define this optional macro like `O1HEAP_CONFIG_HEADER="path/to/my_o1heap_config.h"` to pass build configuration macros.
-This is useful because some build systems do not allow passing function-like macros via command line flags.
-
-#### O1HEAP_ASSERT(x)
-
-The macro `O1HEAP_ASSERT(x)` can be defined to customize the assertion handling or to disable it.
-To disable assertion checks, the macro should expand to `(void)(x)`.
-If not specified, the macro expands to the standard assertion check macro `assert(x)` as defined in `<assert.h>`.
-
-#### O1HEAP_LIKELY(x)
-
-Some of the conditional branching statements are equipped with this annotation to hint the compiler that
-the generated code should be optimized for the case where the corresponding branch is taken.
-This is done to reduce the worst-case execution time.
-
-The macro should expand to a compiler-specific branch weighting intrinsic,
-or to the original expression `(x)` if no such hinting is desired.
-If not specified, the macro expands as follows:
-
-- For some well-known compilers the macro automatically expands to appropriate branch weighting intrinsics.
-  For example, for GCC, Clang, and ARM Compiler, it expands to `__builtin_expect((x), 1)`.
-- For other (unknown) compilers it expands to the original expression with no modifications: `(x)`.
-
-#### O1HEAP_CLZ(x)
-
-The count leading zeros (CLZ) function is used for fast binary logarithm computation (which has to be done
-multiple times per allocation, so its performance is critical).
-Most of the modern processors implement dedicated hardware support for fast CLZ computation,
-which is available via compiler intrinsics.
-
-If not overridden by the user, for some compilers `O1HEAP_CLZ(x)` will expand to the appropriate intrinsic
-(e.g., `__builtin_clzl(x)` for GCC/Clang).
-For other compilers it will default to a slow software implementation,
-which is likely to significantly degrade the performance of the library.
-
-#### O1HEAP_TRACE
-
-This option is intended for advanced diagnostics and may be not useful in most applications.
-If defined and is nonzero, makes o1heap invoke `extern` trace functions (implemented in the application)
-on every allocation and deallocation. Please refer to `o1heap.h` for usage details.
-
-## Development
+## 🛠️ Development
 
 Please refer to the continuous integration configuration to see how to build and test the library.
 The code must be `clang-format`ted.
@@ -259,14 +256,14 @@ followed by the appropriate static analyser warning suppression statement:
 // NOLINT(*-specific-rule)
 ```
 
-## Further reading
+## 📖 Further reading
 
 - [Timing-Predictable Memory Allocation In Hard Real-Time Systems](https://publikationen.sulb.uni-saarland.de/bitstream/20.500.11880/26614/1/diss.pdf), J. Herter, 2014.
 - [Worst case fragmentation of first fit and best fit storage allocation strategies](https://academic.oup.com/comjnl/article/20/3/242/751782), J. M. Robson, 1975.
 - [Dynamic Memory Allocation In SQLite](https://sqlite.org/malloc.html) -- on Robson proof and deterministic fragmentation.
 - [Динамическая память в системах жёсткого реального времени](https://habr.com/ru/post/486650/) -- issues with dynamic memory allocation in modern embedded RTOS and related popular misconceptions.
 
-## Changelog
+## 📆 Changelog
 
 ### v2.3
 
@@ -294,7 +291,7 @@ WORK IN PROGRESS
 
 The first release.
 
-## License
+## ⚖️ License
 
 The library is available under the terms of the MIT License.
 Please find it in the file `LICENSE`.
