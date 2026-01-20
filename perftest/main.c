@@ -84,6 +84,26 @@ static inline uint32_t stats_mean(const Stats* s, uint32_t n)
     return (uint32_t) (s->sum / n);
 }
 
+static uint32_t measure_cycle_overhead(uint32_t samples)
+{
+    uint32_t min = UINT32_MAX;
+    if (samples == 0u)
+    {
+        samples = 1u;
+    }
+    for (uint32_t i = 0; i < samples; i++)
+    {
+        const uint32_t start = cycle_counter_read();
+        const uint32_t end = cycle_counter_read();
+        const uint32_t delta = end - start;
+        if (delta < min)
+        {
+            min = delta;
+        }
+    }
+    return min;
+}
+
 static void print_header(void)
 {
     printf("%-5s %7s %10s %10s %10s\n", "op", "bytes", "min", "mean", "max");
@@ -213,9 +233,11 @@ static bool run_perftest(void)
     const O1HeapDiagnostics diag_before = o1heapGetDiagnostics(heap);
 
     const uint32_t irq_state = save_and_disable_interrupts();
+    const uint32_t overhead = measure_cycle_overhead(64u);
     for (uint32_t i = 0; i < MEASURE_ITERATIONS; i++)
     {
-        const uint32_t size_index = (uint32_t) random_size_index();
+        const uint32_t size_index =
+            (i < (uint32_t) ALLOC_SIZES_COUNT) ? i : (uint32_t) random_size_index();
         const size_t alloc_size = alloc_sizes[size_index];
         const uint32_t alloc_start = cycle_counter_read();
         void* const p = o1heapAllocate(heap, alloc_size);
@@ -226,14 +248,18 @@ static bool run_perftest(void)
             printf("alloc failed at %" PRIu32 "\n", i);
             return false;
         }
-        stats_add(&alloc_stats[size_index], alloc_end - alloc_start);
-        stats_add(&alloc_total, alloc_end - alloc_start);
+        const uint32_t alloc_cycles = alloc_end - alloc_start;
+        const uint32_t alloc_adj = (alloc_cycles > overhead) ? (alloc_cycles - overhead) : 0u;
+        stats_add(&alloc_stats[size_index], alloc_adj);
+        stats_add(&alloc_total, alloc_adj);
 
         const uint32_t free_start = cycle_counter_read();
         o1heapFree(heap, p);
         const uint32_t free_end = cycle_counter_read();
-        stats_add(&free_stats[size_index], free_end - free_start);
-        stats_add(&free_total, free_end - free_start);
+        const uint32_t free_cycles = free_end - free_start;
+        const uint32_t free_adj = (free_cycles > overhead) ? (free_cycles - overhead) : 0u;
+        stats_add(&free_stats[size_index], free_adj);
+        stats_add(&free_total, free_adj);
         counts[size_index]++;
     }
     restore_interrupts(irq_state);
@@ -244,6 +270,7 @@ static bool run_perftest(void)
     print_heap_row("pre", &diag_before);
     print_heap_row("post", &diag_after);
 
+    printf("overhead cycles: %" PRIu32 "\n", overhead);
     print_header();
     print_row_label("alloc", "total", &alloc_total, MEASURE_ITERATIONS);
     print_row_label("free", "total", &free_total, MEASURE_ITERATIONS);
