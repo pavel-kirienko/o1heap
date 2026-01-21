@@ -1151,6 +1151,194 @@ TEST_CASE("General: realloc")
     dealloc(d, {{O, 4096}});
     b = d = nullptr;
 
+    // ==================== MERGE BACKWARD NO LEFTOVER ====================
+
+    // This tests the edge case in EXPAND BACKWARD where:
+    // - prev is free, next is free
+    // - prev + frag + next equals EXACTLY the needed size (leftover = 0)
+    // This exercises line 649 branch 0 in o1heap.c (next_free=true in the no-leftover case).
+    // Setup: [prev free 256][frag used 128][next free 128][blocker]
+    // Realloc frag to need 512 bytes.
+    // Forward check: 128 + 128 = 256 < 512 -> fail
+    // Backward check: 256 + 128 + 128 = 512 >= 512 -> success, leftover = 0
+    a = alloc(240U,
+              {
+                  {X, 256},
+                  {O, 3840},
+              });
+    b = alloc(112U,
+              {
+                  {X, 256},
+                  {X, 128},
+                  {O, 3712},
+              });
+    c = alloc(112U,
+              {
+                  {X, 256},  // a (prev)
+                  {X, 128},  // b (frag)
+                  {X, 128},  // c (next)
+                  {O, 3584},
+              });
+    // Allocate blocker (d) to prevent b from using the tail for direct alloc-copy-free.
+    // The tail is 3584, requesting 2000 needs 2048 fragment. 3584 >= 2048.
+    d = alloc(2000U,
+              {
+                  {X, 256},   // a
+                  {X, 128},   // b
+                  {X, 128},   // c
+                  {X, 2048},  // d (blocker)
+                  {O, 1536},
+              });
+
+    // Free a (prev) and c (next), keeping b (frag) and d (blocker).
+    // Result: [free 256][b used 128][free 128][d used 2048][free 1536]
+    dealloc(a,
+            {
+                {O, 256},
+                {X, 128},  // b
+                {X, 128},  // c
+                {X, 2048},
+                {O, 1536},
+            });
+    dealloc(c,
+            {
+                {O, 256},   // freed a
+                {X, 128},   // b
+                {O, 128},   // freed c
+                {X, 2048},  // d
+                {O, 1536},
+            });
+    a = c = nullptr;
+
+    // Now: [free 256][b used 128][free 128][d used 2048][free 1536]
+    // Request size 480 -> needs 512 byte fragment on both x64 and x32.
+    // (x64: 480+16=496 -> 512; x32: 480+8=488 -> 512)
+    // Forward: 128 + 128 = 256 < 512 -> cannot expand forward only
+    // Backward: 256 + 128 + 128 = 512 >= 512 -> success!
+    // Leftover = 512 - 512 = 0 < FRAGMENT_SIZE_MIN -> no split, absorb all three
+    b = realloc_check(b,
+                      112U,
+                      480U,  // needs 512 byte fragment (256 + 128 + 128 = 512 exactly)
+                      {
+                          {X, 512},   // b expanded via merge (absorbed all of prev and next)
+                          {X, 2048},  // d
+                          {O, 1536},
+                      },
+                      true,
+                      false);  // different pointer (moved backward)
+
+    // Clean up.
+    dealloc(b, {{O, 512}, {X, 2048}, {O, 1536}});
+    dealloc(d, {{O, 4096}});
+    b = d = nullptr;
+
+    // ==================== REALLOC LAST FRAGMENT (next == NULL) ====================
+
+    // This tests reallocating the last fragment in the heap where next is NULL.
+    // This exercises the branch at line 564 where next == NULL.
+    // Setup: [blocker used 2048][frag used 2048] (frag is at the end, no next fragment)
+    a = alloc(2000U,
+              {
+                  {X, 2048},  // a (blocker)
+                  {O, 2048},
+              });
+    b = alloc(2000U,
+              {
+                  {X, 2048},  // a
+                  {X, 2048},  // b (last fragment, uses all remaining space)
+              });
+    // b is now the last fragment, next == NULL
+
+    // Shrink b: since next == NULL, next_free = false, next_size = 0
+    // Shrink with leftover >= MIN and next_free = false
+    // Request 496 bytes: x64: 496+16=512, x32: 496+8=504 -> both round to 512
+    b = realloc_check(b,
+                      2000U,
+                      496U,  // shrink from 2048 to 512
+                      {
+                          {X, 2048},  // a
+                          {X, 512},   // b shrunk
+                          {O, 1536},  // leftover becomes new free fragment (no merge, next was NULL)
+                      },
+                      true,
+                      true);  // same pointer (shrink in place)
+
+    // Grow b: prev is used (a), next is free (the leftover), should expand forward
+    // Request 1000 bytes: x64: 1000+16=1016, x32: 1000+8=1008 -> both round to 1024
+    b = realloc_check(b,
+                      496U,
+                      1000U,  // grow from 512 to 1024
+                      {
+                          {X, 2048},  // a
+                          {X, 1024},  // b expanded
+                          {O, 1024},  // leftover after expansion
+                      },
+                      true,
+                      true);  // same pointer (expand forward)
+
+    // Clean up.
+    dealloc(b, {{X, 2048}, {O, 2048}});
+    dealloc(a, {{O, 4096}});
+    a = b = nullptr;
+
+    // ==================== BACKWARD EXPANSION INSUFFICIENT ====================
+
+    // This tests the case where prev is free but prev + frag + next is still not enough.
+    // This exercises line 626 branch 3 (condition false when prev_free is true).
+    // Setup: [free 64][frag 64][blocker 2048][free 1920]
+    // Try to realloc frag to need 256 bytes.
+    // Forward: frag(64) + next(0, blocker is used) = 64 < 256 -> fail
+    // Backward: prev(64) + frag(64) + next(0) = 128 < 256 -> fail (target branch!)
+    // Falls through to alloc-copy-free: allocates 256 from the 1920-byte tail.
+    a = alloc(32U,
+              {
+                  {X, 64},
+                  {O, 4032},
+              });
+    b = alloc(32U,
+              {
+                  {X, 64},
+                  {X, 64},
+                  {O, 3968},
+              });
+    c = alloc(1900U,
+              {
+                  {X, 64},    // a
+                  {X, 64},    // b
+                  {X, 2048},  // c (blocker)
+                  {O, 1920},
+              });
+
+    // Free a to create: [free 64][b used 64][c used 2048][free 1920]
+    dealloc(a,
+            {
+                {O, 64},
+                {X, 64},
+                {X, 2048},
+                {O, 1920},
+            });
+    a = nullptr;
+
+    // Realloc b to need 256 bytes. This will use alloc-copy-free fallback.
+    // After realloc: [free 128][c used 2048][b used 256][free 1664]
+    // (old b merges with prev when freed)
+    b = realloc_check(b,
+                      32U,
+                      200U,  // needs 256 byte fragment
+                      {
+                          {O, 128},   // merged: freed prev (64) + freed old b (64)
+                          {X, 2048},  // c
+                          {X, 256},   // b (new location)
+                          {O, 1664},  // remaining tail
+                      },
+                      true,
+                      false);  // different pointer (alloc-copy-free)
+
+    // Clean up.
+    dealloc(b, {{O, 128}, {X, 2048}, {O, 1920}});
+    dealloc(c, {{O, 4096}});
+    b = c = nullptr;
+
     // ==================== TRUE OOM ====================
 
     // Setup: heap is fragmented such that even merging can't help.
