@@ -141,7 +141,8 @@ void o1heapFree(O1HeapInstance* const handle, void* const pointer);
 ///   and NULL is returned to indicate failure. The complexity is constant.
 ///
 /// To summarize, the only linear-complexity case is when the new_amount is larger and there is not enough free space
-/// following this fragment, necessitating moving the data to a new place. Every other case is constant-complexity.
+/// following this fragment, necessitating moving the data to a new place; the library avoids this if at all possible.
+/// Every other case is constant-complexity as the data is not moved.
 void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const size_t new_amount);
 
 /// Obtains the maximum theoretically possible allocation size for this heap instance.
