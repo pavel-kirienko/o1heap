@@ -548,22 +548,17 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
     O1HEAP_ASSERT(handle != NULL);
     O1HEAP_ASSERT(handle->diagnostics.capacity <= FRAGMENT_SIZE_MAX);
 
-    // Edge case: NULL pointer acts as allocate.
-    if (O1HEAP_UNLIKELY(pointer == NULL))
+    // HANDLE ALL EDGE CASES FIRST. This simplifies the following logic.
+    if (O1HEAP_UNLIKELY(pointer == NULL))  // Allocate delegation like in standard realloc().
     {
         return o1heapAllocate(handle, new_amount);  // MISRA: Early return is justifiable as it simplifies control flow
     }
-
-    // Edge case: zero size acts as free.
-    if (O1HEAP_UNLIKELY(new_amount == 0U))
+    if (O1HEAP_UNLIKELY(new_amount == 0U))  // Free delegation. Common implementation-defined extension in realloc().
     {
         o1heapFree(handle, pointer);
         return NULL;  // MISRA: Early return is justifiable as it simplifies control flow
     }
-
-    // Guard against overflow as in o1heapAllocate.
-    // Update diagnostics at the end, similar to o1heapAllocate, to ensure trace hooks see consistent state.
-    if (O1HEAP_UNLIKELY(new_amount > (handle->diagnostics.capacity - O1HEAP_ALIGNMENT)))
+    if (O1HEAP_UNLIKELY(new_amount > (handle->diagnostics.capacity - O1HEAP_ALIGNMENT)))  // Prevent size overflow.
     {
         if (O1HEAP_LIKELY(handle->diagnostics.peak_request_size < new_amount))
         {
@@ -573,27 +568,13 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
         return NULL;  // MISRA: Early return is justifiable as it simplifies control flow
     }
 
-    Fragment* const frag = (Fragment*) (void*) (((char*) pointer) - O1HEAP_ALIGNMENT);
-
-    // Validate the fragment in debug builds.
-    O1HEAP_ASSERT(((size_t) frag) % sizeof(Fragment*) == 0U);
-    O1HEAP_ASSERT(((size_t) frag) >= (((size_t) handle) + INSTANCE_SIZE_PADDED));
-    O1HEAP_ASSERT(((size_t) frag) <=
-                  (((size_t) handle) + INSTANCE_SIZE_PADDED + handle->diagnostics.capacity - FRAGMENT_SIZE_MIN));
-    O1HEAP_ASSERT(fragIsUsed(frag));
-    O1HEAP_ASSERT(((size_t) fragGetNext(frag)) % sizeof(Fragment*) == 0U);
-    O1HEAP_ASSERT(((size_t) fragGetPrev(frag)) % sizeof(Fragment*) == 0U);
-
-    const size_t frag_size = fragGetSize(handle, frag);
-    O1HEAP_ASSERT(frag_size >= FRAGMENT_SIZE_MIN);
-    O1HEAP_ASSERT(frag_size <= handle->diagnostics.capacity);
-    O1HEAP_ASSERT((frag_size % FRAGMENT_SIZE_MIN) == 0U);
-
-    const size_t old_amount = frag_size - O1HEAP_ALIGNMENT;
-
-    const size_t new_frag_size = roundUpToPowerOf2(new_amount + O1HEAP_ALIGNMENT);
-    O1HEAP_ASSERT(new_frag_size <= FRAGMENT_SIZE_MAX);
-    O1HEAP_ASSERT(new_frag_size >= FRAGMENT_SIZE_MIN);
+    // NORMAL REALLOC BEHAVIORS. The edge cases have been handled above.
+    Fragment* const frag          = (Fragment*) (void*) (((char*) pointer) - O1HEAP_ALIGNMENT);
+    const size_t    frag_size     = fragGetSize(handle, frag);
+    const size_t    old_amount    = frag_size - O1HEAP_ALIGNMENT;
+    const size_t    new_frag_size = roundUpToPowerOf2(new_amount + O1HEAP_ALIGNMENT);
+    O1HEAP_ASSERT((new_frag_size <= FRAGMENT_SIZE_MAX) && (new_frag_size >= FRAGMENT_SIZE_MIN));
+    O1HEAP_ASSERT(fragIsUsed(frag));  // Catch use-after-free.
 
     void*        out       = NULL;
     Fragment*    prev      = fragGetPrev(frag);
@@ -610,18 +591,13 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
         O1HEAP_ASSERT((leftover % FRAGMENT_SIZE_MIN) == 0U);
         if (O1HEAP_LIKELY(leftover >= FRAGMENT_SIZE_MIN))
         {
-            // Split off the excess.
             Fragment* const new_frag = (Fragment*) (void*) (((char*) frag) + new_frag_size);
             O1HEAP_ASSERT(((size_t) new_frag) % O1HEAP_ALIGNMENT == 0U);
             fragSetUsed(new_frag, false);
             interlink(new_frag, next);
             interlink(frag, new_frag);
-
-            // Update diagnostics before potential merge.
             O1HEAP_ASSERT(handle->diagnostics.allocated >= leftover);
             handle->diagnostics.allocated -= leftover;
-
-            // Merge the leftover with the next fragment if it's free.
             if (O1HEAP_LIKELY(next_free))
             {
                 unbin(handle, next);
@@ -641,7 +617,6 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
         O1HEAP_ASSERT((leftover % FRAGMENT_SIZE_MIN) == 0U);
         if (O1HEAP_LIKELY(leftover >= FRAGMENT_SIZE_MIN))
         {
-            // Split: keep new_frag_size, rebin leftover.
             Fragment* const new_frag = (Fragment*) (void*) (((char*) frag) + new_frag_size);
             O1HEAP_ASSERT(((size_t) new_frag) % O1HEAP_ALIGNMENT == 0U);
             fragSetUsed(new_frag, false);
@@ -652,7 +627,6 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
         }
         else
         {
-            // Take the entire combined space.
             interlink(frag, next_next);
             handle->diagnostics.allocated += next_size;
         }
@@ -665,18 +639,11 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
         const size_t combined = frag_size + prev_size;
         const size_t leftover = combined - new_frag_size;
         O1HEAP_ASSERT((leftover % FRAGMENT_SIZE_MIN) == 0U);
-
-        // Move the data FIRST, before setting up the leftover fragment. The leftover fragment's header
-        // may overlap with the source data (when new_frag_size > prev_size), so we must copy before writing.
-        // The regions may overlap if frag_size > prev_size + alignment, so use memmove.
         out = ((char*) prev) + O1HEAP_ALIGNMENT;
         (void) memmove(out, pointer, old_amount);
-
-        // The new fragment starts at prev's location.
         fragSetUsed(prev, true);
         if (O1HEAP_LIKELY(leftover >= FRAGMENT_SIZE_MIN))
         {
-            // Split: allocate new_frag_size from the beginning, leftover at the end.
             Fragment* const leftover_frag = (Fragment*) (void*) (((char*) prev) + new_frag_size);
             O1HEAP_ASSERT(((size_t) leftover_frag) % O1HEAP_ALIGNMENT == 0U);
             fragSetUsed(leftover_frag, false);
@@ -687,14 +654,12 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
         }
         else
         {
-            // Take the entire combined space.
             interlink(prev, next);
             handle->diagnostics.allocated += prev_size;
         }
     }
     else
     {
-        // Try standard allocate-copy-free.
         void* const new_ptr = o1heapAllocate(handle, new_amount);
         if (new_ptr != NULL)
         {
@@ -704,7 +669,6 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
         }
         else
         {
-            // Standard allocation failed. Check if merging with ALL neighbors would help.
             const size_t merged_size = frag_size + prev_size + next_size;
             if (O1HEAP_LIKELY(merged_size >= new_frag_size))
             {
