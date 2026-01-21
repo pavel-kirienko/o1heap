@@ -112,6 +112,33 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount);
 /// The function is executed in constant time.
 void o1heapFree(O1HeapInstance* const handle, void* const pointer);
 
+/// Similar to the standard realloc() with a few improvements. Given a previously allocated fragment and a new size,
+/// attempts to resize the fragment.
+///
+/// - If the pointer is NULL, acts as o1heapAllocate(). The complexity is constant.
+///
+/// - If the new_amount is zero, acts as o1heapFree() (n.b.: in realloc() this case is implementation-defined).
+///   The complexity is constant.
+///
+/// - If the new_amount is not greater than the old fragment size, the same memory pointer is always returned;
+///   the data is not moved and the fragment is shrunk in place. The complexity is constant.
+///
+/// - If the new_amount is greater than the old fragment but there is enough free space after the fragment
+///   to expand in-place, the fragment is expanded in place and the same pointer is returned; the data is not moved.
+///   The complexity is constant. The contents of the expanded memory is undefined.
+///
+/// - If the new_amount is greater than the old fragment and there is not enough free space after the fragment to
+///   expand in-place, but there is a suitable free space elsewhere, the data is moved and the new pointer is returned.
+///   The complexity is LINEAR (sic!) of the size of the old fragment, as it needs to me memmove()d to the new location.
+///   The new pointer is returned. The new fragment may overlap the original one.
+///
+/// - Otherwise, there is not enough memory to expand the fragment as requested. The old fragment remains valid as-is,
+///   and NULL is returned to indicate failure. The complexity is constant.
+///
+/// To summarize, the only linear-complexity case is when the new_amount is larger and there is not enough free space
+/// following this fragment, necessitating moving the data to a new place. Every other case is constant-complexity.
+void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const size_t new_amount);
+
 /// Obtains the maximum theoretically possible allocation size for this heap instance.
 /// This is useful when implementing std::allocator_traits<Alloc>::max_size.
 size_t o1heapGetMaxAllocationSize(const O1HeapInstance* const handle);
