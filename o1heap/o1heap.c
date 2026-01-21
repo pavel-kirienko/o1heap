@@ -590,7 +590,7 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
     const size_t prev_size = prev_free ? fragGetSize(handle, prev) : 0U;
     const size_t next_size = next_free ? fragGetSize(handle, next) : 0U;
 
-    // SHRINK OR SAME SIZE: new_frag_size <= frag_size; data stays in place.
+    // SHRINK OR SAME SIZE: new_frag_size <= frag_size. Data stays in place.
     if (O1HEAP_UNLIKELY(new_frag_size <= frag_size))
     {
         const size_t leftover = frag_size - new_frag_size;
@@ -619,13 +619,13 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
         }
         out = pointer;
     }
-    // EXPAND FORWARD: next is free and current + next >= new_frag_size; data stays in place.
-    else if (next_free && (frag_size + next_size >= new_frag_size))
+    // EXPAND FORWARD: next is free and current+next >= new_frag_size. Data stays in place.
+    else if (next_free && ((frag_size + next_size) >= new_frag_size))
     {
         unbin(handle, next);
         const size_t leftover = (frag_size + next_size) - new_frag_size;
         O1HEAP_ASSERT((leftover % FRAGMENT_SIZE_MIN) == 0U);
-        if (O1HEAP_LIKELY(leftover >= FRAGMENT_SIZE_MIN))
+        if (O1HEAP_LIKELY(leftover >= FRAGMENT_SIZE_MIN))  // [ frag ][ --- next --- ] => [ --- frag --- ][ next ]
         {
             Fragment* const new_frag = (Fragment*) (void*) (((char*) frag) + new_frag_size);
             fragSetUsed(new_frag, false);
@@ -634,71 +634,52 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
             rebin(handle, new_frag);
             handle->diagnostics.allocated += new_frag_size - frag_size;
         }
-        else
+        else  // [ frag ][ --- next --- ] => [ --- frag --- ]
         {
             interlink(frag, fragGetNext(next));
             handle->diagnostics.allocated += next_size;
         }
         out = pointer;
     }
-    // EXPAND BACKWARD: prev is free and current + prev >= new_frag_size; data must be moved (unavoidable)
-    else if (prev_free && (frag_size + prev_size >= new_frag_size))
+    // EXPAND BACKWARD AND FORWARD: prev is free; next maybe free; prev+current+next >= new_frag_size.
+    // Data must be moved, this is unavoidable because there is not enough space ahead.
+    // Note that since the move size is not greater than the current fragment, memmove will not invalidate the next
+    // fragment, but it may invalidate the current fragment.
+    else if (prev_free && ((prev_size + frag_size + next_size) >= new_frag_size))
     {
         unbin(handle, prev);
-        const size_t leftover = (frag_size + prev_size) - new_frag_size;
-        O1HEAP_ASSERT((leftover % FRAGMENT_SIZE_MIN) == 0U);
-        out = ((char*) prev) + O1HEAP_ALIGNMENT;
-        (void) memmove(out, pointer, old_amount);
+        if (next_free)
+        {
+            unbin(handle, next);
+        }
+        out = ((char*) prev) + O1HEAP_ALIGNMENT;   // Move all the way to the back before we setup new fragments.
+        (void) memmove(out, pointer, old_amount);  // ATTENTION: Invalidates the old frag due to potential overwrite.
         fragSetUsed(prev, true);
+        const size_t leftover = (prev_size + frag_size + next_size) - new_frag_size;
+        O1HEAP_ASSERT((leftover % FRAGMENT_SIZE_MIN) == 0U);
         if (O1HEAP_LIKELY(leftover >= FRAGMENT_SIZE_MIN))
         {
-            Fragment* const leftover_frag = (Fragment*) (void*) (((char*) prev) + new_frag_size);
-            fragSetUsed(leftover_frag, false);
-            interlink(leftover_frag, next);
-            interlink(prev, leftover_frag);  // NOLINT(readability-suspicious-call-argument)
-            rebin(handle, leftover_frag);
+            Fragment* const new_frag = (Fragment*) (void*) (((char*) prev) + new_frag_size);
+            fragSetUsed(new_frag, false);
+            interlink(new_frag, next_free ? fragGetNext(next) : next);
+            interlink(prev, new_frag);  // NOLINT(readability-suspicious-call-argument)
+            rebin(handle, new_frag);
             handle->diagnostics.allocated += new_frag_size - frag_size;
         }
         else
         {
-            interlink(prev, next);
-            handle->diagnostics.allocated += prev_size;
+            interlink(prev, next_free ? fragGetNext(next) : next);
+            handle->diagnostics.allocated += prev_size + next_size;
         }
     }
+    // ALLOCATE NEW BLOCK: copy data, free old block. In-place or near-place expansion not possible.
     else
     {
-        void* const new_ptr = o1heapAllocate(handle, new_amount);
-        if (new_ptr != NULL)
+        out = o1heapAllocate(handle, new_amount);
+        if (out != NULL)
         {
-            (void) memcpy(new_ptr, pointer, old_amount);
+            (void) memcpy(out, pointer, old_amount);
             o1heapFree(handle, pointer);
-            out = new_ptr;
-        }
-        else
-        {
-            const size_t merged_size = frag_size + prev_size + next_size;
-            if (O1HEAP_LIKELY(merged_size >= new_frag_size))
-            {
-                // Undo the OOM count increment from the failed alloc above - the user's request will succeed.
-                O1HEAP_ASSERT(handle->diagnostics.oom_count > 0U);
-                handle->diagnostics.oom_count--;
-
-                // Merging will create enough space. Save the first bytes before freeing.
-                char saved[sizeof(void*) * 2U];
-                (void) memcpy(&saved[0], pointer, sizeof(saved));
-
-                // Free the old block; this will merge with free neighbors.
-                o1heapFree(handle, pointer);
-
-                // Allocate the new size. This is guaranteed to succeed because merged_size >= new_frag_size.
-                out = o1heapAllocate(handle, new_amount);
-                O1HEAP_ASSERT(out != NULL);
-
-                // Move the data. The new location may overlap with the old.
-                (void) memmove(out, pointer, old_amount);
-                (void) memcpy(out, &saved[0], sizeof(saved));
-            }
-            // else: truly out of memory, out remains NULL.
         }
     }
 
