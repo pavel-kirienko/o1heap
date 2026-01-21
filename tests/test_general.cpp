@@ -1189,6 +1189,9 @@ TEST_CASE("General: realloc")
                   {X, 2048},  // d (blocker)
                   {O, 1536},
               });
+    // Allocated: 256 + 128 + 128 + 2048 = 2560
+    REQUIRE(allocated == 2560U);
+    REQUIRE(heap->diagnostics.allocated == 2560U);
 
     // Free a (prev) and c (next), keeping b (frag) and d (blocker).
     // Result: [free 256][b used 128][free 128][d used 2048][free 1536]
@@ -1209,6 +1212,9 @@ TEST_CASE("General: realloc")
                 {O, 1536},
             });
     a = c = nullptr;
+    // Allocated after frees: 2560 - 256 - 128 = 2176 (b=128 + d=2048)
+    REQUIRE(allocated == 2176U);
+    REQUIRE(heap->diagnostics.allocated == 2176U);
 
     // Now: [free 256][b used 128][free 128][d used 2048][free 1536]
     // Request size 480 -> needs 512 byte fragment on both x64 and x32.
@@ -1216,6 +1222,7 @@ TEST_CASE("General: realloc")
     // Forward: 128 + 128 = 256 < 512 -> cannot expand forward only
     // Backward: 256 + 128 + 128 = 512 >= 512 -> success!
     // Leftover = 512 - 512 = 0 < FRAGMENT_SIZE_MIN -> no split, absorb all three
+    // Allocated update: += prev_size + next_size = 256 + 128 = 384 -> 2176 + 384 = 2560
     b = realloc_check(b,
                       112U,
                       480U,  // needs 512 byte fragment (256 + 128 + 128 = 512 exactly)
@@ -1226,6 +1233,9 @@ TEST_CASE("General: realloc")
                       },
                       true,
                       false);  // different pointer (moved backward)
+    // Allocated after realloc: 2560 (b=512 + d=2048)
+    REQUIRE(allocated == 2560U);
+    REQUIRE(heap->diagnostics.allocated == 2560U);
 
     // Clean up.
     dealloc(b, {{O, 512}, {X, 2048}, {O, 1536}});
@@ -1248,10 +1258,14 @@ TEST_CASE("General: realloc")
                   {X, 2048},  // b (last fragment, uses all remaining space)
               });
     // b is now the last fragment, next == NULL
+    // Allocated: 2048 + 2048 = 4096
+    REQUIRE(allocated == 4096U);
+    REQUIRE(heap->diagnostics.allocated == 4096U);
 
     // Shrink b: since next == NULL, next_free = false, next_size = 0
     // Shrink with leftover >= MIN and next_free = false
     // Request 496 bytes: x64: 496+16=512, x32: 496+8=504 -> both round to 512
+    // Allocated update: -= leftover = -(2048 - 512) = -1536 -> 4096 - 1536 = 2560
     b = realloc_check(b,
                       2000U,
                       496U,  // shrink from 2048 to 512
@@ -1262,9 +1276,13 @@ TEST_CASE("General: realloc")
                       },
                       true,
                       true);  // same pointer (shrink in place)
+    // Allocated after shrink: 2560 (a=2048 + b=512)
+    REQUIRE(allocated == 2560U);
+    REQUIRE(heap->diagnostics.allocated == 2560U);
 
     // Grow b: prev is used (a), next is free (the leftover), should expand forward
     // Request 1000 bytes: x64: 1000+16=1016, x32: 1000+8=1008 -> both round to 1024
+    // Allocated update: += new_frag_size - frag_size = 1024 - 512 = 512 -> 2560 + 512 = 3072
     b = realloc_check(b,
                       496U,
                       1000U,  // grow from 512 to 1024
@@ -1275,6 +1293,9 @@ TEST_CASE("General: realloc")
                       },
                       true,
                       true);  // same pointer (expand forward)
+    // Allocated after expand: 3072 (a=2048 + b=1024)
+    REQUIRE(allocated == 3072U);
+    REQUIRE(heap->diagnostics.allocated == 3072U);
 
     // Clean up.
     dealloc(b, {{X, 2048}, {O, 2048}});
@@ -1308,6 +1329,9 @@ TEST_CASE("General: realloc")
                   {X, 2048},  // c (blocker)
                   {O, 1920},
               });
+    // Allocated: 64 + 64 + 2048 = 2176
+    REQUIRE(allocated == 2176U);
+    REQUIRE(heap->diagnostics.allocated == 2176U);
 
     // Free a to create: [free 64][b used 64][c used 2048][free 1920]
     dealloc(a,
@@ -1318,8 +1342,13 @@ TEST_CASE("General: realloc")
                 {O, 1920},
             });
     a = nullptr;
+    // Allocated after free: 2176 - 64 = 2112 (b=64 + c=2048)
+    REQUIRE(allocated == 2112U);
+    REQUIRE(heap->diagnostics.allocated == 2112U);
 
     // Realloc b to need 256 bytes. This will use alloc-copy-free fallback.
+    // Alloc-copy-free: allocate new 256-byte block, copy data, free old 64-byte block.
+    // Allocated update: +256 (new alloc) -64 (free old) = +192 -> 2112 + 192 = 2304
     // After realloc: [free 128][c used 2048][b used 256][free 1664]
     // (old b merges with prev when freed)
     b = realloc_check(b,
@@ -1333,6 +1362,9 @@ TEST_CASE("General: realloc")
                       },
                       true,
                       false);  // different pointer (alloc-copy-free)
+    // Allocated after realloc: 2304 (c=2048 + b=256)
+    REQUIRE(allocated == 2304U);
+    REQUIRE(heap->diagnostics.allocated == 2304U);
 
     // Clean up.
     dealloc(b, {{O, 128}, {X, 2048}, {O, 1920}});

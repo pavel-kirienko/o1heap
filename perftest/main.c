@@ -14,7 +14,7 @@
 #include <stdio.h>
 
 #define HEAP_ARENA_SIZE_BYTES (64u * 1024u)
-#define MEASURE_ITERATIONS    10000000u
+#define MEASURE_ITERATIONS    20000000u
 #define MAX_LIVE_BLOCKS       256u
 
 #define DEMCR_ADDR       (0xE000EDFCu)
