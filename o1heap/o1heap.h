@@ -134,7 +134,7 @@ void o1heapFree(O1HeapInstance* const handle, void* const pointer);
 ///
 /// - If the new_amount is greater than the old fragment and there is not enough free space after the fragment to
 ///   expand in-place, but there is a suitable free space elsewhere, the data is moved and the new pointer is returned.
-///   The complexity is LINEAR (sic!) of the size of the old fragment, as it needs to me memmove()d to the new location.
+///   The complexity is LINEAR (sic!) of the size of the old fragment, as it needs to be memmove()d to the new location.
 ///   The library attempts to relocate the data in a nearby or recently used area to improve cache locality.
 ///   The new pointer is returned. The new fragment may overlap the original one.
 ///
