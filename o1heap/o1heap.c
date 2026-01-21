@@ -87,20 +87,6 @@ O1HEAP_PRIVATE uint_fast8_t O1HEAP_CLZ(const size_t x)
 }
 #endif
 
-/// If O1HEAP_TRACE is defined and is nonzero, trace tools can get events when o1heap memory is allocated or freed.
-/// The corresponding events are delivered by invoking extern functions o1heapTraceAllocate() etc, defined in the
-/// application. Please refer to the documentation for those functions for the additional information.
-#ifndef O1HEAP_TRACE
-#    define O1HEAP_TRACE 0
-#endif
-#if O1HEAP_TRACE
-#    define O1HEAP_TRACE_ALLOCATE(handle, pointer, size) o1heapTraceAllocate(handle, pointer, size)
-#    define O1HEAP_TRACE_FREE(handle, pointer, size) o1heapTraceFree(handle, pointer, size)
-#else
-#    define O1HEAP_TRACE_ALLOCATE(handle, pointer, size) (void) 0
-#    define O1HEAP_TRACE_FREE(handle, pointer, size) (void) 0
-#endif
-
 // ---------------------------------------- INTERNAL DEFINITIONS ----------------------------------------
 
 #if !defined(__STDC_VERSION__) || (__STDC_VERSION__ < 199901L)
@@ -462,16 +448,7 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
             fragSetUsed(frag, true);
 
             out = ((char*) frag) + O1HEAP_ALIGNMENT;
-            O1HEAP_TRACE_ALLOCATE(handle, out, fragGetSize(handle, frag));
         }
-        else
-        {
-            O1HEAP_TRACE_ALLOCATE(handle, out, amount);
-        }
-    }
-    else
-    {
-        O1HEAP_TRACE_ALLOCATE(handle, out, amount);
     }
 
     // Update the diagnostics.
@@ -507,8 +484,6 @@ void o1heapFree(O1HeapInstance* const handle, void* const pointer)
         O1HEAP_ASSERT(frag_size >= FRAGMENT_SIZE_MIN);
         O1HEAP_ASSERT(frag_size <= handle->diagnostics.capacity);
         O1HEAP_ASSERT((frag_size % FRAGMENT_SIZE_MIN) == 0U);
-
-        O1HEAP_TRACE_FREE(handle, pointer, frag_size);
 
         // Even if we're going to drop the fragment later, mark it free anyway to prevent double-free.
         fragSetUsed(frag, false);
@@ -673,6 +648,7 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
         }
     }
     // ALLOCATE NEW BLOCK: copy data, free old block. In-place or near-place expansion not possible.
+    // This is the final resort. The normal allocate also handles the OOM count update.
     else
     {
         out = o1heapAllocate(handle, new_amount);
@@ -683,8 +659,6 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
         }
     }
 
-    // Update diagnostics at the end, after all operations, to ensure trace hooks see consistent state.
-    // Note: oom_count is already handled by the internal o1heapAllocate call if allocation fails.
     if (O1HEAP_LIKELY(handle->diagnostics.peak_request_size < new_amount))
     {
         handle->diagnostics.peak_request_size = new_amount;

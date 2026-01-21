@@ -109,12 +109,6 @@ If not overridden by the user, for some compilers `O1HEAP_CLZ(x)` will expand to
 For other compilers it will default to a slow software implementation,
 which is likely to significantly degrade the performance of the library.
 
-#### O1HEAP_TRACE
-
-This option is intended for advanced diagnostics and may not be useful in most applications.
-If defined and is nonzero, makes o1heap invoke `extern` trace functions (implemented in the application)
-on every allocation and deallocation. Please refer to `o1heap.h` for usage details.
-
 ## ⚙️ Design
 
 ### Objectives
@@ -298,6 +292,9 @@ deallocation slowdown, consider using v2 instead -- there are no known issues wi
 
 `o1heapReallocate` is added, which is constant-complexity except for the case when the old fragment cannot be
 expanded in-place. See the API docs for details.
+
+The trace events introduced in v2.2 have been removed due to unclean integration and relative lack of use.
+They may reappear in a future version, perhaps designed differently.
 
 This revision also adds a simple native performance test suite for RP2350.
 Similar suites for other targets may appear later.

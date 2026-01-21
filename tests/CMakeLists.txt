@@ -99,7 +99,6 @@ gen_test_matrix(
         test_general.cpp
         ""
 )
-gen_test("test_general_c11_x32_trc" "test_general.cpp" "O1HEAP_TRACE=1" c_std_11 "-m32" "-m32")
 
 gen_test("test_api_exhaustive_c11_x64" "test_api_exhaustive.cpp" "" c_std_11 "-m64" "-m64")
 gen_test("test_api_exhaustive_c11_x32" "test_api_exhaustive.cpp" "" c_std_11 "-m32" "-m32")
