@@ -118,7 +118,7 @@ void o1heapFree(O1HeapInstance* const handle, void* const pointer);
 /// - If the pointer is NULL, acts as o1heapAllocate(). The complexity is constant.
 ///
 /// - If the new_amount is zero, acts as o1heapFree() (n.b.: in realloc() this case is implementation-defined).
-///   The complexity is constant.
+///   The result should be ignored. The complexity is constant.
 ///
 /// - If the new_amount is not greater than the old fragment size, the same memory pointer is always returned;
 ///   the data is not moved and the fragment is shrunk in place. The complexity is constant.
