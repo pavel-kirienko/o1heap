@@ -472,6 +472,755 @@ TEST_CASE("General: free")
     REQUIRE(heap->doInvariantsHold());
 }
 
+TEST_CASE("General: realloc")
+{
+    using internal::Fragment;
+
+    // Use a 4096-byte heap (after instance overhead) for predictable fragment sizes.
+    // Fragment sizes are powers of 2: 32 (min), 64, 128, 256, 512, 1024, 2048, 4096.
+    alignas(128U) std::array<std::byte, 4096U + sizeof(internal::O1HeapInstance) + O1HEAP_ALIGNMENT - 1U> arena{};
+    auto heap = init(arena.data(), std::size(arena));
+    REQUIRE(heap != nullptr);
+    REQUIRE(heap->diagnostics.capacity == 4096U);
+
+    std::size_t allocated         = 0U;
+    std::size_t peak_allocated    = 0U;
+    std::size_t peak_request_size = 0U;
+    uint64_t    oom_count         = 0U;
+
+    // Helper to allocate and track diagnostics.
+    const auto alloc = [&](const std::size_t amount, const std::vector<std::pair<bool, std::size_t>>& reference) {
+        const auto p = heap->allocate(amount);
+        if (amount > 0U)
+        {
+            REQUIRE(p != nullptr);
+            std::generate_n(reinterpret_cast<std::byte*>(p), amount, getRandomByte);
+            const auto& frag      = Fragment::constructFromAllocatedMemory(p);
+            const auto  frag_size = frag.header.getSize(heap);
+            allocated += frag_size;
+            peak_allocated    = std::max(peak_allocated, allocated);
+            peak_request_size = std::max(peak_request_size, amount);
+        }
+        REQUIRE(heap->diagnostics.allocated == allocated);
+        REQUIRE(heap->diagnostics.peak_allocated == peak_allocated);
+        REQUIRE(heap->diagnostics.peak_request_size == peak_request_size);
+        heap->matchFragments(reference);
+        REQUIRE(heap->doInvariantsHold());
+        return p;
+    };
+
+    // Helper to free and track diagnostics.
+    const auto dealloc = [&](void* const p, const std::vector<std::pair<bool, std::size_t>>& reference) {
+        if (p != nullptr)
+        {
+            const auto& frag = Fragment::constructFromAllocatedMemory(p);
+            allocated -= frag.header.getSize(heap);
+        }
+        heap->free(p);
+        REQUIRE(heap->diagnostics.allocated == allocated);
+        REQUIRE(heap->diagnostics.peak_allocated == peak_allocated);
+        REQUIRE(heap->diagnostics.peak_request_size == peak_request_size);
+        heap->matchFragments(reference);
+        REQUIRE(heap->doInvariantsHold());
+    };
+
+    // Helper to realloc, fill with pattern, and verify heap state.
+    // old_amount is used to verify data preservation (first min(old,new) bytes should match).
+    const auto realloc_check = [&](void* const                                      old_ptr,
+                                   const std::size_t                                old_amount,
+                                   const std::size_t                                new_amount,
+                                   const std::vector<std::pair<bool, std::size_t>>& reference,
+                                   const bool                                       expect_success  = true,
+                                   const bool                                       expect_same_ptr = false) {
+        INFO(heap->visualize());
+
+        // Fill old allocation with a known pattern before realloc.
+        if (old_ptr != nullptr && old_amount > 0U)
+        {
+            auto* bytes = reinterpret_cast<std::uint8_t*>(old_ptr);
+            for (std::size_t i = 0; i < old_amount; i++)
+            {
+                bytes[i] = static_cast<std::uint8_t>((i * 7U + 0xAB) & 0xFFU);
+            }
+        }
+
+        // Track old fragment size for diagnostics update.
+        std::size_t old_frag_size = 0U;
+        if (old_ptr != nullptr)
+        {
+            const auto& frag = Fragment::constructFromAllocatedMemory(old_ptr);
+            old_frag_size    = frag.header.getSize(heap);
+        }
+
+        // Update peak_request_size before calling realloc.
+        if (new_amount > 0U)
+        {
+            peak_request_size = std::max(peak_request_size, new_amount);
+        }
+
+        const auto new_ptr = heap->reallocate(old_ptr, new_amount);
+
+        if (expect_success && new_amount > 0U)
+        {
+            REQUIRE(new_ptr != nullptr);
+
+            if (expect_same_ptr)
+            {
+                REQUIRE(new_ptr == old_ptr);
+            }
+
+            // Verify data preservation: first min(old_amount, new_amount) bytes should match pattern.
+            const auto  preserve_size = std::min(old_amount, new_amount);
+            const auto* bytes         = reinterpret_cast<const std::uint8_t*>(new_ptr);
+            for (std::size_t i = 0; i < preserve_size; i++)
+            {
+                const auto expected = static_cast<std::uint8_t>((i * 7U + 0xAB) & 0xFFU);
+                REQUIRE(bytes[i] == expected);
+            }
+
+            // Update tracked allocated size.
+            const auto& new_frag      = Fragment::constructFromAllocatedMemory(new_ptr);
+            const auto  new_frag_size = new_frag.header.getSize(heap);
+            allocated                 = allocated - old_frag_size + new_frag_size;
+            // During alloc-copy-free, peak can spike temporarily (old + new both allocated).
+            // We sync from heap's diagnostics since we can't easily predict which path was taken.
+            peak_allocated = heap->diagnostics.peak_allocated;
+        }
+        else if (new_amount == 0U)
+        {
+            // Acts as free.
+            REQUIRE(new_ptr == nullptr);
+            allocated -= old_frag_size;
+        }
+        else
+        {
+            // Expect failure (OOM). Original pointer remains valid.
+            REQUIRE(new_ptr == nullptr);
+            oom_count++;
+        }
+
+        REQUIRE(heap->diagnostics.allocated == allocated);
+        REQUIRE(heap->diagnostics.peak_allocated == peak_allocated);
+        REQUIRE(heap->diagnostics.peak_request_size == peak_request_size);
+        REQUIRE(heap->diagnostics.oom_count == oom_count);
+        heap->matchFragments(reference);
+        REQUIRE(heap->doInvariantsHold());
+
+        // On failure, return the original pointer (still valid). On success, return new_ptr.
+        return (new_ptr != nullptr) ? new_ptr : old_ptr;
+    };
+
+    constexpr auto X = true;   // used
+    constexpr auto O = false;  // free
+
+    // ==================== EDGE CASES ====================
+
+    // Edge case 1: NULL pointer acts as allocate.
+    auto a = realloc_check(nullptr,
+                           0U,
+                           32U,
+                           {
+                               {X, 64},
+                               {O, 4032},
+                           });
+
+    // Edge case 2: Zero size acts as free.
+    (void) realloc_check(a,
+                         32U,
+                         0U,
+                         {
+                             {O, 4096},
+                         });
+    a = nullptr;
+
+    // Edge case 3: Realloc that increases peak_allocated.
+    // After edge case 2, peak_allocated=64, allocated=0.
+    // Allocate small, then realloc to larger size that exceeds peak.
+    a = realloc_check(nullptr,
+                      0U,
+                      1U,  // needs 32-byte fragment
+                      {
+                          {X, 32},
+                          {O, 4064},
+                      });
+    // Now allocated=32, peak=64 (still from edge case 1).
+    // Realloc to need 128 bytes (request 100 -> 100+16=116 -> 128).
+    // This should increase allocated to 128, exceeding peak of 64.
+    a = realloc_check(a,
+                      1U,
+                      100U,
+                      {
+                          {X, 128},
+                          {O, 3968},
+                      },
+                      true,
+                      true);  // same pointer (expand forward into free tail)
+    // Now peak_allocated should have been updated to 128.
+    REQUIRE(heap->diagnostics.peak_allocated == 128U);
+    // Clean up.
+    dealloc(a, {{O, 4096}});
+    a = nullptr;
+
+    // ==================== SHRINK SCENARIOS ====================
+
+    // Setup: allocate a large block to shrink.
+    a = alloc(200U,
+              {
+                  {X, 256},
+                  {O, 3840},
+              });
+
+    // Shrink scenario 1: Same size - no change.
+    a = realloc_check(a,
+                      200U,
+                      200U,
+                      {
+                          {X, 256},  // a unchanged
+                          {O, 3840},
+                      },
+                      true,
+                      true);  // same pointer
+
+    // Shrink scenario 2: Shrink with leftover >= MIN, next is free (merge with next).
+    // a is 256 bytes, shrink to fit in 64 bytes -> leftover = 192, merges with 3840 = 4032.
+    a = realloc_check(a,
+                      200U,
+                      20U,
+                      {
+                          {X, 64},    // a (shrunk)
+                          {O, 4032},  // leftover merged with tail
+                      },
+                      true,
+                      true);  // same pointer
+
+    // Shrink scenario 3: Shrink further - 64 bytes down to 32 bytes.
+    // a is 64 bytes, request 1 byte -> needs 32 bytes. Leftover = 32, merges with tail.
+    a = realloc_check(a,
+                      20U,
+                      1U,
+                      {
+                          {X, 32},    // a (shrunk to min)
+                          {O, 4064},  // leftover merged with tail
+                      },
+                      true,
+                      true);  // same pointer
+
+    // Shrink scenario 4: Shrink where leftover < MIN (no split possible).
+    // a is now 32 bytes (min), request 1 byte -> still needs 32 bytes, no change.
+    a = realloc_check(a,
+                      1U,
+                      1U,
+                      {
+                          {X, 32},  // a (unchanged, can't shrink further)
+                          {O, 4064},
+                      },
+                      true,
+                      true);  // same pointer
+
+    // Setup for shrink with no merge (next is used).
+    // First, free a and allocate fresh blocks in the right configuration.
+    dealloc(a, {{O, 4096}});
+    a = nullptr;
+
+    // Allocate: large block (to shrink), then small blocker.
+    a      = alloc(100U,
+                   {
+                  {X, 128},  // a
+                  {O, 3968},
+              });
+    auto b = alloc(32U,
+                   {
+                       {X, 128},  // a
+                       {X, 64},   // b (blocker)
+                       {O, 3904},
+                   });
+
+    // Shrink scenario 5: Shrink with leftover >= MIN, next is used (no merge).
+    // a is 128 bytes, shrink to fit in 64 bytes -> leftover = 64, becomes new free block.
+    a = realloc_check(a,
+                      100U,
+                      20U,
+                      {
+                          {X, 64},  // a (shrunk)
+                          {O, 64},  // leftover from a
+                          {X, 64},  // b
+                          {O, 3904},
+                      },
+                      true,
+                      true);  // same pointer
+
+    // Clean up.
+    // When a (64 bytes) is freed, it merges with adjacent free block (64 bytes) -> 128 bytes.
+    dealloc(a, {{O, 128}, {X, 64}, {O, 3904}});
+    a = nullptr;
+
+    dealloc(b, {{O, 4096}});
+    b = nullptr;
+
+    // ==================== EXPAND FORWARD SCENARIOS ====================
+
+    // Setup: create a used block followed by a free block.
+    a      = alloc(32U,
+                   {
+                  {X, 64},
+                  {O, 4032},
+              });
+    b      = alloc(32U,
+                   {
+                  {X, 64},
+                  {X, 64},
+                  {O, 3968},
+              });
+    auto c = alloc(32U,
+                   {
+                       {X, 64},
+                       {X, 64},
+                       {X, 64},
+                       {O, 3904},
+                   });
+
+    // Free b to create: [a used][b free][c used][free tail]
+    dealloc(b,
+            {
+                {X, 64},  // a
+                {O, 64},  // b (freed)
+                {X, 64},  // c
+                {O, 3904},
+            });
+    b = nullptr;
+
+    // Expand forward scenario 1: a expands into b's space, with leftover.
+    // a is 64, request 50 bytes -> needs 64 bytes still, but let's request 40 to need 64.
+    // Actually, to expand forward, we need to request more than current frag can hold.
+    // a has 64 bytes frag, user can use 64-16=48 bytes. Request 60 -> needs 128 byte frag.
+    // Next free (b) is 64 bytes. 64 + 64 = 128 >= 128. Expand forward, no leftover.
+    a = realloc_check(a,
+                      32U,
+                      60U,
+                      {
+                          {X, 128},  // a expanded into b's space (64+64=128, no leftover)
+                          {X, 64},   // c
+                          {O, 3904},
+                      },
+                      true,
+                      true);  // same pointer
+
+    // Clean up and set up for split scenario.
+    dealloc(a, {{O, 128}, {X, 64}, {O, 3904}});
+    dealloc(c, {{O, 4096}});
+    a = c = nullptr;
+
+    // Setup for expand forward with split.
+    a = alloc(32U,
+              {
+                  {X, 64},
+                  {O, 4032},
+              });
+    b = alloc(200U,
+              {
+                  {X, 64},
+                  {X, 256},
+                  {O, 3776},
+              });
+    c = alloc(32U,
+              {
+                  {X, 64},   // a
+                  {X, 256},  // b
+                  {X, 64},   // c
+                  {O, 3712},
+              });
+
+    // Free b: [a used 64][b free 256][c used 64][free 3712]
+    dealloc(b,
+            {
+                {X, 64},   // a
+                {O, 256},  // b freed
+                {X, 64},   // c
+                {O, 3712},
+            });
+    b = nullptr;
+
+    // Expand forward scenario 2: a expands into b's space, with leftover (split).
+    // a is 64, request 60 -> needs 128. Free next is 256. 64 + 256 = 320 >= 128.
+    // Take 128, leftover = 320 - 128 = 192 >= 32, so split.
+    a = realloc_check(a,
+                      32U,
+                      60U,
+                      {
+                          {X, 128},  // a expanded
+                          {O, 192},  // leftover
+                          {X, 64},   // c
+                          {O, 3712},
+                      },
+                      true,
+                      true);  // same pointer
+
+    // Clean up for backward expand tests.
+    dealloc(a, {{O, 320}, {X, 64}, {O, 3712}});
+    dealloc(c, {{O, 4096}});
+    a = c = nullptr;
+
+    // ==================== EXPAND BACKWARD SCENARIOS ====================
+
+    // Setup: create [free][used][used] pattern.
+    a = alloc(32U,
+              {
+                  {X, 64},
+                  {O, 4032},
+              });
+    b = alloc(32U,
+              {
+                  {X, 64},
+                  {X, 64},
+                  {O, 3968},
+              });
+    c = alloc(32U,
+              {
+                  {X, 64},
+                  {X, 64},
+                  {X, 64},
+                  {O, 3904},
+              });
+
+    // Free a to create: [a free 64][b used 64][c used 64][free 3904]
+    dealloc(a,
+            {
+                {O, 64},  // a freed
+                {X, 64},  // b
+                {X, 64},  // c
+                {O, 3904},
+            });
+    a = nullptr;
+
+    // Expand backward scenario 1: b expands into a's space, no leftover.
+    // b is 64, request 60 -> needs 128. Prev free is 64. 64 + 64 = 128 >= 128, no leftover.
+    // Data must be moved backward.
+    b = realloc_check(b,
+                      32U,
+                      60U,
+                      {
+                          {X, 128},  // b expanded backward (now starts at old a's position)
+                          {X, 64},   // c
+                          {O, 3904},
+                      },
+                      true,
+                      false);  // different pointer (moved backward)
+
+    // Clean up and set up for split scenario.
+    dealloc(b, {{O, 128}, {X, 64}, {O, 3904}});
+    dealloc(c, {{O, 4096}});
+    b = c = nullptr;
+
+    // Setup for expand backward with split (larger prev free block).
+    a = alloc(200U,
+              {
+                  {X, 256},
+                  {O, 3840},
+              });
+    b = alloc(32U,
+              {
+                  {X, 256},
+                  {X, 64},
+                  {O, 3776},
+              });
+    c = alloc(32U,
+              {
+                  {X, 256},  // a
+                  {X, 64},   // b
+                  {X, 64},   // c
+                  {O, 3712},
+              });
+
+    // Free a: [a free 256][b used 64][c used 64][free 3712]
+    dealloc(a,
+            {
+                {O, 256},  // a freed
+                {X, 64},   // b
+                {X, 64},   // c
+                {O, 3712},
+            });
+    a = nullptr;
+
+    // Expand backward scenario 2: b expands into a's space, with leftover (split).
+    // b is 64, request 60 -> needs 128. Prev free is 256. 64 + 256 = 320 >= 128.
+    // Take 128, leftover = 320 - 128 = 192 >= 32, so split. Leftover at end.
+    b = realloc_check(b,
+                      32U,
+                      60U,
+                      {
+                          {X, 128},  // b expanded backward
+                          {O, 192},  // leftover at end of combined region
+                          {X, 64},   // c
+                          {O, 3712},
+                      },
+                      true,
+                      false);  // different pointer
+
+    // Clean up.
+    dealloc(b, {{O, 320}, {X, 64}, {O, 3712}});
+    dealloc(c, {{O, 4096}});
+    b = c = nullptr;
+
+    // ==================== STANDARD ALLOC-COPY-FREE ====================
+
+    // Setup: fragment the heap so neighbors can't help but there's space elsewhere.
+    a      = alloc(32U,
+                   {
+                  {X, 64},
+                  {O, 4032},
+              });
+    b      = alloc(32U,
+                   {
+                  {X, 64},
+                  {X, 64},
+                  {O, 3968},
+              });
+    c      = alloc(32U,
+                   {
+                  {X, 64},
+                  {X, 64},
+                  {X, 64},
+                  {O, 3904},
+              });
+    auto d = alloc(32U,
+                   {
+                       {X, 64},
+                       {X, 64},
+                       {X, 64},
+                       {X, 64},
+                       {O, 3840},
+                   });
+
+    // All neighbors of b are used. Request larger size -> must alloc elsewhere.
+    // b is 64, request 200 -> needs 256. No free neighbors. Must allocate from tail (3840).
+    // After: old b freed, new b at tail.
+    b = realloc_check(b,
+                      32U,
+                      200U,
+                      {
+                          {X, 64},   // a
+                          {O, 64},   // old b freed
+                          {X, 64},   // c
+                          {X, 64},   // d
+                          {X, 256},  // new b
+                          {O, 3584},
+                      },
+                      true,
+                      false);  // different pointer
+
+    // Clean up.
+    // When a (64) is freed, it merges with adjacent free (old b, 64) -> free 128.
+    dealloc(a, {{O, 128}, {X, 64}, {X, 64}, {X, 256}, {O, 3584}});
+    a = nullptr;
+
+    dealloc(c, {{O, 192}, {X, 64}, {X, 256}, {O, 3584}});
+    dealloc(d, {{O, 256}, {X, 256}, {O, 3584}});
+    dealloc(b, {{O, 4096}});
+    b = c = d = nullptr;
+
+    // ==================== MERGE-AWARE FALLBACK (THE EDGE CASE) ====================
+
+    // This is the tricky case: standard alloc fails, but merging prev + current + next works.
+    // Setup: [free Z][used X][free tail] where Z < needed, X < needed, but Z + X >= needed.
+    // And the tail must be too small or non-existent to satisfy a direct alloc.
+
+    // Create a nearly-full heap with specific layout.
+    a = alloc(1800U,
+              {
+                  {X, 2048},
+                  {O, 2048},
+              });
+    b = alloc(32U,
+              {
+                  {X, 2048},
+                  {X, 64},
+                  {O, 1984},
+              });
+    c = alloc(900U,
+              {
+                  {X, 2048},
+                  {X, 64},
+                  {X, 1024},
+                  {O, 960},
+              });
+    d = alloc(400U,
+              {
+                  {X, 2048},  // a
+                  {X, 64},    // b
+                  {X, 1024},  // c
+                  {X, 512},   // d
+                  {O, 448},
+              });
+
+    // Free a and c to create: [free 2048][b used 64][free 1024][d used 512][free 448]
+    dealloc(a,
+            {
+                {O, 2048},
+                {X, 64},
+                {X, 1024},
+                {X, 512},
+                {O, 448},
+            });
+    dealloc(c,
+            {
+                {O, 2048},
+                {X, 64},
+                {O, 1024},
+                {X, 512},
+                {O, 448},
+            });
+    a = c = nullptr;
+
+    // Now b (64 bytes) is between two free blocks (2048 before, 1024 after).
+    // Request a size that:
+    // - Is larger than 2048 (so direct alloc of that block fails)
+    // - Is larger than 1024 (so direct alloc of that block fails)
+    // - Is <= 2048 + 64 + 1024 = 3136
+    // Request 2050 bytes -> needs 4096 byte fragment. 2048 + 64 + 1024 = 3136 < 4096. Won't work.
+    // Let's try: request 1500 -> needs 2048. prev=2048 alone can satisfy. That's not the edge case.
+    //
+    // Better setup: make prev and next both smaller than needed individually.
+    // Reset and try again.
+    // Free d: merges with adjacent free blocks (1024 + 512 + 448 = 1984).
+    dealloc(d, {{O, 2048}, {X, 64}, {O, 1984}});
+    d = nullptr;
+    // Free b: merges with all adjacent free blocks -> entire heap free.
+    dealloc(b, {{O, 4096}});
+    b = nullptr;
+
+    // Setup for merge-aware fallback.
+    // Goal: [free 512][b used 64][free 512][d used 2048][free 960]
+    // Then request for b that needs 1024. prev=512 < 1024, next=512 < 1024, tail=960 < 1024.
+    // Standard alloc fails. But 512 + 64 + 512 = 1088 >= 1024, so merge-aware fallback works.
+    a = alloc(400U,
+              {
+                  {X, 512},
+                  {O, 3584},
+              });
+    b = alloc(32U,
+              {
+                  {X, 512},
+                  {X, 64},
+                  {O, 3520},
+              });
+    c = alloc(400U,
+              {
+                  {X, 512},
+                  {X, 64},
+                  {X, 512},
+                  {O, 3008},
+              });
+    // 2000 + 16 = 2016, needs 2048 fragment. 3008 >= 2048.
+    d = alloc(2000U,
+              {
+                  {X, 512},   // a
+                  {X, 64},    // b
+                  {X, 512},   // c
+                  {X, 2048},  // d
+                  {O, 960},
+              });
+    // Now: [a 512][b 64][c 512][d 2048][free 960]
+
+    // Free a and c:
+    dealloc(a,
+            {
+                {O, 512},
+                {X, 64},
+                {X, 512},
+                {X, 2048},
+                {O, 960},
+            });
+    dealloc(c,
+            {
+                {O, 512},
+                {X, 64},
+                {O, 512},
+                {X, 2048},
+                {O, 960},
+            });
+    a = c = nullptr;
+
+    // Current state: [free 512][b used 64][free 512][d used 2048][free 960]
+    // b wants to grow to need 1024 byte fragment.
+    // prev (512) < 1024. next (512) < 1024. tail (960) < 1024.
+    // Standard alloc will fail (no single block >= 1024).
+    // But: 512 + 64 + 512 = 1088 >= 1024. Merge-aware fallback should work!
+
+    b = realloc_check(b,
+                      32U,
+                      500U,  // needs 1024 byte fragment
+                      {
+                          {X, 1024},  // b expanded via merge (512 + 64 + 512 = 1088, take 1024)
+                          {O, 64},    // leftover (1088 - 1024 = 64)
+                          {X, 2048},  // d
+                          {O, 960},
+                      },
+                      true,
+                      false);  // different pointer (moved)
+
+    // Clean up.
+    dealloc(b, {{O, 1088}, {X, 2048}, {O, 960}});
+    dealloc(d, {{O, 4096}});
+    b = d = nullptr;
+
+    // ==================== TRUE OOM ====================
+
+    // Setup: heap is fragmented such that even merging can't help.
+    a = alloc(32U,
+              {
+                  {X, 64},
+                  {O, 4032},
+              });
+    b = alloc(1800U,
+              {
+                  {X, 64},
+                  {X, 2048},
+                  {O, 1984},
+              });
+    c = alloc(32U,
+              {
+                  {X, 64},
+                  {X, 2048},
+                  {X, 64},
+                  {O, 1920},
+              });
+
+    // Try to grow 'a' to need 4096 bytes (larger than entire heap capacity - overhead).
+    // prev = none, current = 64, next = none (b is used). Can't merge with anyone.
+    // And 64 < 4096 needed. OOM.
+    a = realloc_check(a,
+                      32U,
+                      4000U,  // needs 4096 fragment, but a is only 64 and no free neighbors
+                      {
+                          {X, 64},    // a unchanged
+                          {X, 2048},  // b
+                          {X, 64},    // c
+                          {O, 1920},
+                      },
+                      false);  // expect failure
+
+    // Edge case: request larger than capacity.
+    a = realloc_check(a,
+                      32U,
+                      10000U,  // way larger than capacity
+                      {
+                          {X, 64},
+                          {X, 2048},
+                          {X, 64},
+                          {O, 1920},
+                      },
+                      false);  // expect failure
+
+    // Final cleanup.
+    dealloc(a, {{O, 64}, {X, 2048}, {X, 64}, {O, 1920}});
+    dealloc(b, {{O, 2112}, {X, 64}, {O, 1920}});
+    dealloc(c, {{O, 4096}});
+
+    REQUIRE(heap->diagnostics.capacity == 4096U);
+    REQUIRE(heap->diagnostics.allocated == 0U);
+    REQUIRE(heap->doInvariantsHold());
+}
+
 /// This test has been empirically tuned to expand its state space coverage.
 /// If any new behaviors need to be tested, please consider writing another test instead of changing this one.
 TEST_CASE("General: random A")

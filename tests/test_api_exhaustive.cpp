@@ -261,6 +261,298 @@ TEST_CASE("Exhaustive: edge cases")
     }
 }
 
+TEST_CASE("Exhaustive: realloc edge cases")
+{
+    alignas(O1HEAP_ALIGNMENT) std::array<std::uint8_t, 4 * KiB> arena{};
+
+    auto* const heap = initHeap(arena.data(), arena.size());
+    REQUIRE(heap != nullptr);
+
+    const auto min_frag = O1HEAP_ALIGNMENT * 2U;
+    (void) o1heapGetDiagnostics(heap);  // Verify heap is valid.
+
+    SECTION("NULL pointer acts as allocate")
+    {
+        const auto before = o1heapGetDiagnostics(heap);
+        void*      ptr    = o1heapReallocate(heap, nullptr, 64);
+        REQUIRE(ptr != nullptr);
+        REQUIRE(reinterpret_cast<std::uintptr_t>(ptr) % O1HEAP_ALIGNMENT == 0);
+
+        const auto after = o1heapGetDiagnostics(heap);
+        REQUIRE(after.allocated == computeFragmentSize(64));
+        REQUIRE(after.oom_count == before.oom_count);
+        REQUIRE(o1heapDoInvariantsHold(heap));
+
+        o1heapFree(heap, ptr);
+        REQUIRE(o1heapGetDiagnostics(heap).allocated == 0);
+    }
+
+    SECTION("Zero size acts as free")
+    {
+        void* ptr = o1heapAllocate(heap, 64);
+        REQUIRE(ptr != nullptr);
+        std::memset(ptr, 0xAB, 64);
+
+        const auto before = o1heapGetDiagnostics(heap);
+        void*      result = o1heapReallocate(heap, ptr, 0);
+        REQUIRE(result == nullptr);
+
+        const auto after = o1heapGetDiagnostics(heap);
+        REQUIRE(after.allocated == 0);
+        REQUIRE(after.oom_count == before.oom_count);  // Not an OOM!
+        REQUIRE(o1heapDoInvariantsHold(heap));
+    }
+
+    SECTION("Same size returns same pointer")
+    {
+        void* ptr = o1heapAllocate(heap, 64);
+        REQUIRE(ptr != nullptr);
+        std::memset(ptr, 0xAB, 64);
+
+        const auto before = o1heapGetDiagnostics(heap);
+        void*      result = o1heapReallocate(heap, ptr, 64);
+        REQUIRE(result == ptr);  // Same pointer!
+
+        const auto after = o1heapGetDiagnostics(heap);
+        REQUIRE(after.allocated == before.allocated);
+        REQUIRE(o1heapDoInvariantsHold(heap));
+
+        // Verify content preserved.
+        const auto* bytes = static_cast<const std::uint8_t*>(result);
+        for (std::size_t i = 0; i < 64; i++)
+        {
+            REQUIRE(bytes[i] == 0xAB);
+        }
+
+        o1heapFree(heap, result);
+    }
+
+    SECTION("Shrink in place")
+    {
+        void* ptr = o1heapAllocate(heap, 200);  // Gets 256-byte fragment.
+        REQUIRE(ptr != nullptr);
+        const auto frag_size = computeFragmentSize(200);
+        REQUIRE(frag_size == 256);
+
+        // Fill with pattern.
+        auto* bytes = static_cast<std::uint8_t*>(ptr);
+        for (std::size_t i = 0; i < 200; i++)
+        {
+            bytes[i] = static_cast<std::uint8_t>(i & 0xFFU);
+        }
+
+        // Shrink to need only 64-byte fragment.
+        void* result = o1heapReallocate(heap, ptr, 20);
+        REQUIRE(result == ptr);  // Same pointer for shrink!
+
+        const auto after = o1heapGetDiagnostics(heap);
+        REQUIRE(after.allocated == 64);  // Shrunk from 256 to 64.
+        REQUIRE(o1heapDoInvariantsHold(heap));
+
+        // Verify first 20 bytes preserved.
+        bytes = static_cast<std::uint8_t*>(result);
+        for (std::size_t i = 0; i < 20; i++)
+        {
+            REQUIRE(bytes[i] == static_cast<std::uint8_t>(i & 0xFFU));
+        }
+
+        o1heapFree(heap, result);
+    }
+
+    SECTION("Expand forward into free neighbor")
+    {
+        // Allocate two blocks, free the second, then expand the first.
+        void* a = o1heapAllocate(heap, 1);  // 32-byte fragment.
+        void* b = o1heapAllocate(heap, 1);  // 32-byte fragment.
+        REQUIRE(a != nullptr);
+        REQUIRE(b != nullptr);
+
+        const auto a_addr = reinterpret_cast<std::uintptr_t>(a);
+        const auto b_addr = reinterpret_cast<std::uintptr_t>(b);
+        REQUIRE(b_addr == a_addr + min_frag);
+
+        // Fill a with pattern.
+        auto* bytes = static_cast<std::uint8_t*>(a);
+        for (std::size_t i = 0; i < min_frag - O1HEAP_ALIGNMENT; i++)
+        {
+            bytes[i] = static_cast<std::uint8_t>(0xAA ^ i);
+        }
+
+        // Free b to create free space after a.
+        o1heapFree(heap, b);
+
+        // Expand a to need 64-byte fragment (a=32, b=32 free -> merged to 64).
+        void* result = o1heapReallocate(heap, a, 32);  // needs 64-byte fragment.
+        REQUIRE(result == a);                          // Same pointer for forward expand!
+        REQUIRE(o1heapDoInvariantsHold(heap));
+
+        // Verify content preserved.
+        bytes = static_cast<std::uint8_t*>(result);
+        for (std::size_t i = 0; i < min_frag - O1HEAP_ALIGNMENT; i++)
+        {
+            REQUIRE(bytes[i] == static_cast<std::uint8_t>(0xAA ^ i));
+        }
+
+        o1heapFree(heap, result);
+    }
+
+    SECTION("Expand backward into free neighbor")
+    {
+        // Allocate two blocks, free the first, then expand the second.
+        void* a = o1heapAllocate(heap, 1);
+        void* b = o1heapAllocate(heap, 1);
+        void* c = o1heapAllocate(heap, 1);  // Blocker to prevent forward expand.
+        REQUIRE(a != nullptr);
+        REQUIRE(b != nullptr);
+        REQUIRE(c != nullptr);
+
+        // Fill b with pattern.
+        auto* bytes = static_cast<std::uint8_t*>(b);
+        for (std::size_t i = 0; i < min_frag - O1HEAP_ALIGNMENT; i++)
+        {
+            bytes[i] = static_cast<std::uint8_t>(0xBB ^ i);
+        }
+
+        // Free a to create free space before b.
+        o1heapFree(heap, a);
+
+        // Expand b to need 64-byte fragment.
+        void* result = o1heapReallocate(heap, b, 32);
+        REQUIRE(result != nullptr);
+        REQUIRE(result != b);  // Different pointer for backward expand (data moved)!
+        REQUIRE(o1heapDoInvariantsHold(heap));
+
+        // Verify content preserved.
+        bytes = static_cast<std::uint8_t*>(result);
+        for (std::size_t i = 0; i < min_frag - O1HEAP_ALIGNMENT; i++)
+        {
+            REQUIRE(bytes[i] == static_cast<std::uint8_t>(0xBB ^ i));
+        }
+
+        o1heapFree(heap, result);
+        o1heapFree(heap, c);
+    }
+
+    SECTION("Alloc-copy-free fallback")
+    {
+        // Create fragmentation that forces alloc-copy-free.
+        void* a = o1heapAllocate(heap, 1);
+        void* b = o1heapAllocate(heap, 1);
+        void* c = o1heapAllocate(heap, 1);
+        REQUIRE(a != nullptr);
+        REQUIRE(b != nullptr);
+        REQUIRE(c != nullptr);
+
+        // Fill b with pattern.
+        auto* bytes = static_cast<std::uint8_t*>(b);
+        for (std::size_t i = 0; i < min_frag - O1HEAP_ALIGNMENT; i++)
+        {
+            bytes[i] = static_cast<std::uint8_t>(0xCC ^ i);
+        }
+
+        // b is sandwiched between a and c (both used). Expand b to need 256 bytes.
+        void* result = o1heapReallocate(heap, b, 200);
+        REQUIRE(result != nullptr);
+        REQUIRE(result != b);  // Different pointer (allocated elsewhere).
+        REQUIRE(o1heapDoInvariantsHold(heap));
+
+        // Verify content preserved.
+        bytes = static_cast<std::uint8_t*>(result);
+        for (std::size_t i = 0; i < min_frag - O1HEAP_ALIGNMENT; i++)
+        {
+            REQUIRE(bytes[i] == static_cast<std::uint8_t>(0xCC ^ i));
+        }
+
+        o1heapFree(heap, a);
+        o1heapFree(heap, result);
+        o1heapFree(heap, c);
+    }
+
+    SECTION("OOM returns NULL and preserves original")
+    {
+        // Fill most of the heap.
+        const auto max_alloc = o1heapGetMaxAllocationSize(heap);
+        void*      big       = o1heapAllocate(heap, max_alloc);
+        REQUIRE(big != nullptr);
+
+        // Allocate a small block.
+        void* small = o1heapAllocate(heap, 1);
+        // This might fail if heap is full, but let's try.
+        if (small != nullptr)
+        {
+            // Fill with pattern.
+            auto* bytes = static_cast<std::uint8_t*>(small);
+            for (std::size_t i = 0; i < min_frag - O1HEAP_ALIGNMENT; i++)
+            {
+                bytes[i] = static_cast<std::uint8_t>(0xDD ^ i);
+            }
+
+            const auto before = o1heapGetDiagnostics(heap);
+
+            // Try to expand small to need more than available.
+            void* result = o1heapReallocate(heap, small, max_alloc);
+            REQUIRE(result == nullptr);  // OOM!
+
+            const auto after = o1heapGetDiagnostics(heap);
+            REQUIRE(after.oom_count == before.oom_count + 1);
+            REQUIRE(o1heapDoInvariantsHold(heap));
+
+            // Original should still be valid and content preserved.
+            bytes = static_cast<std::uint8_t*>(small);
+            for (std::size_t i = 0; i < min_frag - O1HEAP_ALIGNMENT; i++)
+            {
+                REQUIRE(bytes[i] == static_cast<std::uint8_t>(0xDD ^ i));
+            }
+
+            o1heapFree(heap, small);
+        }
+        o1heapFree(heap, big);
+    }
+
+    SECTION("Realloc size sweep")
+    {
+        // Test reallocating to every size from 1 to max.
+        const auto max_alloc = o1heapGetMaxAllocationSize(heap);
+
+        for (std::size_t new_size = 1; new_size <= max_alloc; new_size *= 2)
+        {
+            void* ptr = o1heapAllocate(heap, 64);
+            REQUIRE(ptr != nullptr);
+
+            // Fill with pattern.
+            auto* bytes = static_cast<std::uint8_t*>(ptr);
+            for (std::size_t i = 0; i < 64; i++)
+            {
+                bytes[i] = static_cast<std::uint8_t>(i * 7 + 0xAB);
+            }
+
+            void* result = o1heapReallocate(heap, ptr, new_size);
+            if (result != nullptr)
+            {
+                REQUIRE(reinterpret_cast<std::uintptr_t>(result) % O1HEAP_ALIGNMENT == 0);
+
+                // Verify first min(64, new_size) bytes preserved.
+                bytes                  = static_cast<std::uint8_t*>(result);
+                const auto check_count = std::min(std::size_t{64}, new_size);
+                for (std::size_t i = 0; i < check_count; i++)
+                {
+                    REQUIRE(bytes[i] == static_cast<std::uint8_t>(i * 7 + 0xAB));
+                }
+
+                o1heapFree(heap, result);
+            }
+            else
+            {
+                // OOM - free original.
+                o1heapFree(heap, ptr);
+            }
+
+            REQUIRE(o1heapGetDiagnostics(heap).allocated == 0);
+            REQUIRE(o1heapDoInvariantsHold(heap));
+        }
+    }
+}
+
 TEST_CASE("Exhaustive: allocation size sweep")
 {
     // Test every allocation size from 1 to a reasonable limit.
@@ -829,7 +1121,6 @@ TEST_CASE("Exhaustive: random walk with content verification", "[long]")
 
     constexpr std::size_t ArenaSize   = 256 * KiB;
     constexpr std::size_t NumOps      = 5'000'000;  // 5 million operations for thorough coverage.
-    constexpr double      AllocProb   = 0.52;       // Slight bias towards allocation.
     constexpr std::size_t MaxAllocReq = 8 * KiB;
 
     alignas(O1HEAP_ALIGNMENT) static std::array<std::uint8_t, ArenaSize> arena{};
@@ -866,9 +1157,14 @@ TEST_CASE("Exhaustive: random walk with content verification", "[long]")
         return true;
     };
 
+    std::size_t total_reallocs = 0;
+
     for (std::size_t op = 0; op < NumOps; op++)
     {
-        const bool do_alloc = allocations.empty() || (rng.nextBool(AllocProb) && allocations.size() < 10000);
+        // Choose operation: 40% alloc, 35% free, 25% realloc (when allocations exist).
+        const auto op_choice  = rng.next(0, 99);
+        const bool do_alloc   = allocations.empty() || (op_choice < 40 && allocations.size() < 10000);
+        const bool do_realloc = !do_alloc && !allocations.empty() && op_choice < 65;
 
         if (do_alloc)
         {
@@ -910,6 +1206,72 @@ TEST_CASE("Exhaustive: random walk with content verification", "[long]")
                 oom_events++;
             }
         }
+        else if (do_realloc)
+        {
+            // Realloc a random allocation to a random new size.
+            REQUIRE(!allocations.empty());
+            const std::size_t idx = rng.next(0, allocations.size() - 1);
+
+            // Verify pattern before reallocating.
+            REQUIRE(allocations[idx].verifyPattern());
+
+            // Choose new size with various distributions.
+            std::size_t       new_size    = 0;
+            const std::size_t size_choice = rng.next(0, 100);
+            if (size_choice < 30)
+            {
+                // Shrink or same size.
+                new_size = rng.next(1, std::max(std::size_t{1}, allocations[idx].requested_size));
+            }
+            else if (size_choice < 60)
+            {
+                // Modest grow.
+                new_size = rng.next(allocations[idx].requested_size, allocations[idx].requested_size * 2 + 64);
+            }
+            else if (size_choice < 90)
+            {
+                // Random size.
+                new_size = rng.next(1, MaxAllocReq);
+            }
+            else
+            {
+                // Large grow.
+                new_size = rng.next(MaxAllocReq / 2, MaxAllocReq);
+            }
+
+            const auto old_size = allocations[idx].requested_size;
+            void*      new_ptr  = o1heapReallocate(heap, allocations[idx].ptr, new_size);
+
+            if (new_ptr != nullptr)
+            {
+                REQUIRE(reinterpret_cast<std::uintptr_t>(new_ptr) % O1HEAP_ALIGNMENT == 0);
+
+                // Verify content preserved (first min(old, new) bytes).
+                const auto*       bytes       = static_cast<const std::uint8_t*>(new_ptr);
+                const std::size_t check_count = std::min(old_size, new_size);
+                // Regenerate expected pattern for verification.
+                const auto expected_pattern = allocations[idx].pattern;
+                for (std::size_t i = 0; i < check_count; i++)
+                {
+                    const auto shift    = static_cast<std::uint64_t>((i % 8U) * 8U);
+                    const auto mult     = static_cast<std::uint64_t>(i) * 251ULL;
+                    const auto expected = static_cast<std::uint8_t>((expected_pattern >> shift) ^ mult ^ 0xA5ULL);
+                    REQUIRE(bytes[i] == expected);
+                }
+
+                // Update tracker.
+                allocations[idx].ptr            = new_ptr;
+                allocations[idx].requested_size = new_size;
+                allocations[idx].fillPattern(allocations[idx].pattern);  // Re-fill with same pattern seed.
+                total_reallocs++;
+            }
+            else
+            {
+                // OOM on realloc - original should still be valid.
+                REQUIRE(allocations[idx].verifyPattern());
+                oom_events++;
+            }
+        }
         else
         {
             // Free a random allocation.
@@ -935,7 +1297,8 @@ TEST_CASE("Exhaustive: random walk with content verification", "[long]")
             if (op % 500000 == 0)
             {
                 std::cout << "Random walk: " << op << "/" << NumOps << " ops, " << allocations.size()
-                          << " live allocations, " << oom_events << " OOMs" << std::endl;
+                          << " live allocations, " << total_reallocs << " reallocs, " << oom_events << " OOMs"
+                          << std::endl;
             }
         }
     }
@@ -955,8 +1318,8 @@ TEST_CASE("Exhaustive: random walk with content verification", "[long]")
     REQUIRE(o1heapGetDiagnostics(heap).allocated == 0);
     REQUIRE(o1heapDoInvariantsHold(heap));
 
-    std::cout << "Random walk complete: " << total_allocs << " allocations, " << total_frees << " frees, " << oom_events
-              << " OOMs" << std::endl;
+    std::cout << "Random walk complete: " << total_allocs << " allocations, " << total_frees << " frees, "
+              << total_reallocs << " reallocs, " << oom_events << " OOMs" << std::endl;
 }
 
 TEST_CASE("Exhaustive: state space coverage for tiny heap", "[long]")

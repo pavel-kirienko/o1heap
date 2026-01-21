@@ -583,13 +583,13 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
     O1HEAP_ASSERT(new_frag_size <= FRAGMENT_SIZE_MAX);
     O1HEAP_ASSERT(new_frag_size >= FRAGMENT_SIZE_MIN);
 
-    void*          out  = NULL;
-    Fragment*      prev = fragGetPrev(frag);
-    Fragment*      next = fragGetNext(frag);
-    const bool     prev_free = (prev != NULL) && (!fragIsUsed(prev));
-    const bool     next_free = (next != NULL) && (!fragIsUsed(next));
-    const size_t   prev_size = prev_free ? fragGetSize(handle, prev) : 0U;
-    const size_t   next_size = next_free ? fragGetSize(handle, next) : 0U;
+    void*        out       = NULL;
+    Fragment*    prev      = fragGetPrev(frag);
+    Fragment*    next      = fragGetNext(frag);
+    const bool   prev_free = (prev != NULL) && (!fragIsUsed(prev));
+    const bool   next_free = (next != NULL) && (!fragIsUsed(next));
+    const size_t prev_size = prev_free ? fragGetSize(handle, prev) : 0U;
+    const size_t next_size = next_free ? fragGetSize(handle, next) : 0U;
 
     // SHRINK OR SAME SIZE: new_frag_size <= frag_size
     if (new_frag_size <= frag_size)
@@ -623,9 +623,9 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
     else if (next_free && (frag_size + next_size >= new_frag_size))
     {
         unbin(handle, next);
-        const size_t combined    = frag_size + next_size;
-        const size_t leftover    = combined - new_frag_size;
-        Fragment*    next_next   = fragGetNext(next);
+        const size_t combined  = frag_size + next_size;
+        const size_t leftover  = combined - new_frag_size;
+        Fragment*    next_next = fragGetNext(next);
         O1HEAP_ASSERT((leftover % FRAGMENT_SIZE_MIN) == 0U);
         if (leftover >= FRAGMENT_SIZE_MIN)
         {
@@ -650,8 +650,8 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
     else if (prev_free && (frag_size + prev_size >= new_frag_size))
     {
         unbin(handle, prev);
-        const size_t combined  = frag_size + prev_size;
-        const size_t leftover  = combined - new_frag_size;
+        const size_t combined = frag_size + prev_size;
+        const size_t leftover = combined - new_frag_size;
         O1HEAP_ASSERT((leftover % FRAGMENT_SIZE_MIN) == 0U);
 
         // Save the first bytes that will be overwritten by Fragment bookkeeping.
@@ -699,6 +699,10 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
             const size_t merged_size = frag_size + prev_size + next_size;
             if (merged_size >= new_frag_size)
             {
+                // Undo the OOM count increment from the failed alloc above - the user's request will succeed.
+                O1HEAP_ASSERT(handle->diagnostics.oom_count > 0U);
+                handle->diagnostics.oom_count--;
+
                 // Merging will create enough space. Save the first bytes before freeing.
                 char saved[sizeof(void*) * 2U];
                 (void) memcpy(&saved[0], pointer, sizeof(saved));
