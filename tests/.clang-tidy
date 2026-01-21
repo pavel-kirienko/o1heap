@@ -35,7 +35,8 @@ Checks: >-
   -misc-redundant-expression,
   -misc-include-cleaner,
   -performance-avoid-endl,
-  -boost-use-ranges,
+  -*-use-ranges,
+  -*-signed-bitwise,
 WarningsAsErrors: '*'
 HeaderFilterRegex: 'internal.hpp'
 FormatStyle: file

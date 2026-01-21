@@ -538,20 +538,27 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
     // Edge case: NULL pointer acts as allocate.
     if (O1HEAP_UNLIKELY(pointer == NULL))
     {
-        return o1heapAllocate(handle, new_amount);
+        return o1heapAllocate(handle, new_amount);  // MISRA: Early return is justifiable as it simplifies control flow
     }
 
     // Edge case: zero size acts as free.
     if (O1HEAP_UNLIKELY(new_amount == 0U))
     {
         o1heapFree(handle, pointer);
-        return NULL;
+        return NULL;  // MISRA: Early return is justifiable as it simplifies control flow
     }
 
     // Update the diagnostics.
     if (O1HEAP_LIKELY(handle->diagnostics.peak_request_size < new_amount))
     {
         handle->diagnostics.peak_request_size = new_amount;
+    }
+
+    // Guard against overflow as in o1heapAllocate.
+    if (O1HEAP_UNLIKELY(new_amount > (handle->diagnostics.capacity - O1HEAP_ALIGNMENT)))
+    {
+        handle->diagnostics.oom_count++;
+        return NULL;  // MISRA: Early return is justifiable as it simplifies control flow
     }
 
     Fragment* const frag = (Fragment*) (void*) (((char*) pointer) - O1HEAP_ALIGNMENT);
@@ -572,13 +579,6 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
 
     const size_t old_amount = frag_size - O1HEAP_ALIGNMENT;
 
-    // Compute the new fragment size required.
-    // Guard against overflow as in o1heapAllocate.
-    if (O1HEAP_UNLIKELY(new_amount > (handle->diagnostics.capacity - O1HEAP_ALIGNMENT)))
-    {
-        handle->diagnostics.oom_count++;
-        return NULL;
-    }
     const size_t new_frag_size = roundUpToPowerOf2(new_amount + O1HEAP_ALIGNMENT);
     O1HEAP_ASSERT(new_frag_size <= FRAGMENT_SIZE_MAX);
     O1HEAP_ASSERT(new_frag_size >= FRAGMENT_SIZE_MIN);
@@ -592,7 +592,7 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
     const size_t next_size = next_free ? fragGetSize(handle, next) : 0U;
 
     // SHRINK OR SAME SIZE: new_frag_size <= frag_size
-    if (new_frag_size <= frag_size)
+    if (O1HEAP_UNLIKELY(new_frag_size <= frag_size))
     {
         const size_t leftover = frag_size - new_frag_size;
         O1HEAP_ASSERT((leftover % FRAGMENT_SIZE_MIN) == 0U);
