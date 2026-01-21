@@ -41,6 +41,11 @@ typedef struct O1HeapInstance O1HeapInstance;
 /// If assertion checks are not disabled, the library will perform automatic runtime self-diagnostics that trigger
 /// an assertion failure if a heap corruption is detected.
 /// Health checks and validation can be done with o1heapDoInvariantsHold().
+///
+/// TODO NOTICE: Maintenance of this information takes about a dozen cycles at least, which is quite significant
+/// compared to the amount of computation needed to do the actual memory management. In the future, we may add a
+/// preprocessor option that disables diagnostics for the benefit of the most performance-sensitive applications.
+/// If you find this feature relevant for your use case, consider opening a ticket.
 typedef struct
 {
     /// The total amount of memory available for serving allocation requests (heap size).

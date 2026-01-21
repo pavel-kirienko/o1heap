@@ -596,7 +596,7 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
     {
         const size_t leftover = frag_size - new_frag_size;
         O1HEAP_ASSERT((leftover % FRAGMENT_SIZE_MIN) == 0U);
-        if (leftover >= FRAGMENT_SIZE_MIN)
+        if (O1HEAP_LIKELY(leftover >= FRAGMENT_SIZE_MIN))
         {
             // Split off the excess.
             Fragment* const new_frag = (Fragment*) (void*) (((char*) frag) + new_frag_size);
@@ -610,7 +610,7 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
             handle->diagnostics.allocated -= leftover;
 
             // Merge the leftover with the next fragment if it's free.
-            if (next_free)
+            if (O1HEAP_LIKELY(next_free))
             {
                 unbin(handle, next);
                 interlink(new_frag, fragGetNext(next));
@@ -627,7 +627,7 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
         const size_t leftover  = combined - new_frag_size;
         Fragment*    next_next = fragGetNext(next);
         O1HEAP_ASSERT((leftover % FRAGMENT_SIZE_MIN) == 0U);
-        if (leftover >= FRAGMENT_SIZE_MIN)
+        if (O1HEAP_LIKELY(leftover >= FRAGMENT_SIZE_MIN))
         {
             // Split: keep new_frag_size, rebin leftover.
             Fragment* const new_frag = (Fragment*) (void*) (((char*) frag) + new_frag_size);
@@ -660,7 +660,7 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
 
         // The new fragment starts at prev's location.
         fragSetUsed(prev, true);
-        if (leftover >= FRAGMENT_SIZE_MIN)
+        if (O1HEAP_LIKELY(leftover >= FRAGMENT_SIZE_MIN))
         {
             // Split: allocate new_frag_size from the beginning, leftover at the end.
             Fragment* const leftover_frag = (Fragment*) (void*) (((char*) prev) + new_frag_size);
@@ -697,7 +697,7 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
         {
             // Standard allocation failed. Check if merging with ALL neighbors would help.
             const size_t merged_size = frag_size + prev_size + next_size;
-            if (merged_size >= new_frag_size)
+            if (O1HEAP_LIKELY(merged_size >= new_frag_size))
             {
                 // Undo the OOM count increment from the failed alloc above - the user's request will succeed.
                 O1HEAP_ASSERT(handle->diagnostics.oom_count > 0U);
