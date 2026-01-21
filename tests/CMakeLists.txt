@@ -17,14 +17,13 @@
 cmake_minimum_required(VERSION 3.12)
 project(o1heap_tests C CXX)
 enable_testing()
-set(CMAKE_CTEST_ARGUMENTS "-V")
 
 if (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
     # assert() shall be disabled in release builds to enable testing of bad free() calls.
     add_definitions(-DNDEBUG=1)
 endif ()
 
-set(library_dir "${CMAKE_SOURCE_DIR}/../o1heap")
+set(library_dir "${CMAKE_SOURCE_DIR}/o1heap")
 
 # clang-tidy
 set(DISABLE_CLANG_TIDY OFF CACHE BOOL "Do not use Clang-Tidy")
@@ -44,7 +43,7 @@ find_program(clang_format NAMES clang-format)
 if (NOT clang_format)
     message(STATUS "Could not locate clang-format")
 else ()
-    file(GLOB format_files ${library_dir}/*.[ch] ${CMAKE_SOURCE_DIR}/*.[ch]pp)
+    file(GLOB format_files ${library_dir}/*.[ch] ${CMAKE_CURRENT_SOURCE_DIR}/*.[ch]pp)
     message(STATUS "Using clang-format: ${clang_format}; files: ${format_files}")
     add_custom_target(format COMMAND ${clang_format} -i -fallback-style=none -style=file --verbose ${format_files})
 endif ()
@@ -67,7 +66,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Woverloaded-virtual -Wsign-promo -Wold-
 include_directories(SYSTEM catch)
 include_directories(${library_dir})
 
-set(common_sources ${CMAKE_SOURCE_DIR}/main.cpp ${library_dir}/o1heap.c)
+set(common_sources ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp ${library_dir}/o1heap.c)
 
 function(gen_test name files compile_definitions compile_features compile_flags link_flags)
     add_executable(${name} ${common_sources} ${files})
