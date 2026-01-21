@@ -33,7 +33,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
           -DCMAKE_C_COMPILER=${{ matrix.c-compiler }}
           -DCMAKE_CXX_COMPILER=${{ matrix.cxx-compiler }}
-          tests
+          .
       - working-directory: ${{github.workspace}}/build
         run: make VERBOSE=1 -j$(nproc)
       - working-directory: ${{github.workspace}}/build
