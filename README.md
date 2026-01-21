@@ -22,7 +22,7 @@ O1Heap is implemented in C99/C11 following MISRA C:2012; it is extremely compact
 understand and validate.
 It is designed to be usable across all conventional architectures out of the box, from 8-bit to 64-bit systems.
 
-⚡ As a reference, on an RP2350 CM33, allocation takes ≤132 cycles and deallocation takes ≤110 cycles —
+⚡ As a reference, on an RP2350 CM33, allocation takes ≤125 cycles and deallocation takes ≤115 cycles —
 *always*, irrespective of the size, preceding (de)allocation sequence, fragmentation, or memory usage —
 making it not only suitable for hard real-time but also one of the fastest allocators out there.
 Similar results have been observed on a Cortex M4 MCU.
@@ -283,22 +283,16 @@ followed by the appropriate static analyser warning suppression statement:
 
 Version 3.0 reduces the per-fragment overhead from 4×(pointer width) to 2×(pointer width) by packing the fragment header.
 On 32-bit platforms, `O1HEAP_ALIGNMENT` and the per-fragment overhead are now 8 bytes instead of 16.
-
-This change saves memory but has some performance cost; e.g., on
-[RP2350 (Cortex M33) allocation is 28% slower, although deallocation is 3% faster](https://github.com/pavel-kirienko/o1heap/pull/32).
-The trade-off is believed to be justifiable for most applications.
-If you want to squeeze maximum allocation performance at the cost of a higher memory overhead and a marginal
-deallocation slowdown, consider using v2 instead -- there are no known issues with that version.
+This change saves memory but has some performance cost; e.g., on RP2350 (Cortex M33) allocation is ≈19% slower
+(allocation mean 119 cycles vs. 100 cycles, deallocation mean 79 vs. 74 cycles;
+see the on-target benchmark in `perftest/`).
+The trade-off is believed to be justifiable for virtually all applications.
 
 `o1heapReallocate` is added, which is constant-complexity except for the case when the old fragment cannot be
 expanded in-place. See the API docs for details.
 
 The trace events introduced in v2.2 have been removed due to unclean integration and relative lack of use.
-They may reappear in a future version, perhaps designed differently.
-For now, if this feature is of interest, either use custom wrappers or stick to v2.2.
-
-This revision also adds a simple native performance test suite for RP2350.
-Similar suites for other targets may appear later.
+They may reappear in a future version, perhaps designed differently; please open an issue to discuss.
 
 ### v2.2
 
