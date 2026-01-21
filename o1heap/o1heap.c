@@ -204,23 +204,40 @@ O1HEAP_PRIVATE size_t roundUpToPowerOf2(const size_t x)
 
 O1HEAP_PRIVATE Fragment* fragGetNext(const Fragment* const frag)
 {
-    return frag->header.next;
+    O1HEAP_ASSERT((((size_t) frag) % sizeof(Fragment*)) == 0U);
+    Fragment* const out = frag->header.next;
+    O1HEAP_ASSERT((((size_t) out) % sizeof(Fragment*)) == 0U);
+    return out;
 }
 
 O1HEAP_PRIVATE Fragment* fragGetPrev(const Fragment* const frag)
 {
-    return (Fragment*) (frag->header.prev_used & ~(uintptr_t) 1U);
+    O1HEAP_ASSERT((((size_t) frag) % sizeof(Fragment*)) == 0U);
+    Fragment* const out = (Fragment*) (frag->header.prev_used & ~(uintptr_t) 1U);
+    O1HEAP_ASSERT((((size_t) out) % sizeof(Fragment*)) == 0U);
+    return out;
 }
 
 O1HEAP_PRIVATE bool fragIsUsed(const Fragment* const frag)
 {
+    O1HEAP_ASSERT((((size_t) frag) % sizeof(Fragment*)) == 0U);
     return (frag->header.prev_used & (uintptr_t) 1U) != 0U;
 }
 
 O1HEAP_PRIVATE size_t fragGetSize(const O1HeapInstance* const handle, const Fragment* const frag)
 {
-    return (frag->header.next != NULL) ? (size_t) (((const char*) frag->header.next) - ((const char*) frag))
-                                       : (size_t) (handle->arena_end - ((const char*) frag));
+    O1HEAP_ASSERT((((size_t) frag) % sizeof(Fragment*)) == 0U);
+    O1HEAP_ASSERT(((size_t) frag) >= (((size_t) handle) + INSTANCE_SIZE_PADDED));
+    O1HEAP_ASSERT((((size_t) fragGetNext(frag)) % sizeof(Fragment*)) == 0U);
+    O1HEAP_ASSERT((((size_t) fragGetPrev(frag)) % sizeof(Fragment*)) == 0U);
+
+    const size_t sz = (frag->header.next != NULL) ? (size_t) (((const char*) frag->header.next) - ((const char*) frag))
+                                                  : (size_t) (handle->arena_end - ((const char*) frag));
+
+    O1HEAP_ASSERT(sz >= FRAGMENT_SIZE_MIN);
+    O1HEAP_ASSERT(sz <= handle->diagnostics.capacity);
+    O1HEAP_ASSERT((sz % FRAGMENT_SIZE_MIN) == 0U);
+    return sz;
 }
 
 O1HEAP_PRIVATE void fragSetNext(Fragment* const frag, Fragment* const value)
@@ -345,6 +362,13 @@ O1HeapInstance* o1heapInit(void* const base, const size_t size)
         O1HEAP_ASSERT((capacity % FRAGMENT_SIZE_MIN) == 0);
         O1HEAP_ASSERT((capacity >= FRAGMENT_SIZE_MIN) && (capacity <= FRAGMENT_SIZE_MAX));
 
+        // Initialize the diagnostics.
+        out->diagnostics.capacity          = capacity;
+        out->diagnostics.allocated         = 0U;
+        out->diagnostics.peak_allocated    = 0U;
+        out->diagnostics.peak_request_size = 0U;
+        out->diagnostics.oom_count         = 0U;
+
         // Store the arena end pointer for computing size of the last fragment.
         char* const arena_start = ((char*) base) + INSTANCE_SIZE_PADDED;
         out->arena_end          = arena_start + capacity;
@@ -359,13 +383,6 @@ O1HeapInstance* o1heapInit(void* const base, const size_t size)
         frag->prev_free = NULL;
         rebin(out, frag);
         O1HEAP_ASSERT(out->nonempty_bin_mask != 0U);
-
-        // Initialize the diagnostics.
-        out->diagnostics.capacity          = capacity;
-        out->diagnostics.allocated         = 0U;
-        out->diagnostics.peak_allocated    = 0U;
-        out->diagnostics.peak_request_size = 0U;
-        out->diagnostics.oom_count         = 0U;
     }
 
     return out;

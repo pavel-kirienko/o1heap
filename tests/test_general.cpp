@@ -712,9 +712,9 @@ TEST_CASE("General: realloc")
     // Allocate: large block (to shrink), then small blocker.
     a      = alloc(100U,
                    {
-                       {X, 128},  // a
-                       {O, 3968},
-                   });
+                  {X, 128},  // a
+                  {O, 3968},
+              });
     auto b = alloc(32U,
                    {
                        {X, 128},  // a
