@@ -155,6 +155,11 @@ struct O1HeapInstance
 static_assert(INSTANCE_SIZE_PADDED >= sizeof(O1HeapInstance), "Invalid instance footprint computation");
 static_assert((INSTANCE_SIZE_PADDED % O1HEAP_ALIGNMENT) == 0U, "Invalid instance footprint computation");
 
+O1HEAP_PRIVATE size_t larger(const size_t a, const size_t b)
+{
+    return (a > b) ? a : b;
+}
+
 /// Undefined for zero argument.
 O1HEAP_PRIVATE uint_fast8_t log2Floor(const size_t x)
 {
@@ -438,10 +443,8 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
             O1HEAP_ASSERT((handle->diagnostics.allocated % FRAGMENT_SIZE_MIN) == 0U);
             handle->diagnostics.allocated += fragment_size;
             O1HEAP_ASSERT(handle->diagnostics.allocated <= handle->diagnostics.capacity);
-            if (O1HEAP_LIKELY(handle->diagnostics.peak_allocated < handle->diagnostics.allocated))
-            {
-                handle->diagnostics.peak_allocated = handle->diagnostics.allocated;
-            }
+            handle->diagnostics.peak_allocated =
+                larger(handle->diagnostics.peak_allocated, handle->diagnostics.allocated);
 
             // Finalize the fragment we just allocated.
             O1HEAP_ASSERT(fragGetSize(handle, frag) >= amount + O1HEAP_ALIGNMENT);
@@ -452,10 +455,7 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
     }
 
     // Update the diagnostics.
-    if (O1HEAP_LIKELY(handle->diagnostics.peak_request_size < amount))
-    {
-        handle->diagnostics.peak_request_size = amount;
-    }
+    handle->diagnostics.peak_request_size = larger(handle->diagnostics.peak_request_size, amount);
     if (O1HEAP_LIKELY((out == NULL) && (amount > 0U)))
     {
         handle->diagnostics.oom_count++;
@@ -528,24 +528,25 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
     O1HEAP_ASSERT(handle != NULL);
     O1HEAP_ASSERT(handle->diagnostics.capacity <= FRAGMENT_SIZE_MAX);
 
-    // HANDLE ALL EDGE CASES FIRST. This simplifies the following logic.
-    if (O1HEAP_UNLIKELY(pointer == NULL))  // Allocate delegation like in standard realloc().
+    // SPECIAL CASE: Allocation delegation.
+    if (O1HEAP_UNLIKELY(pointer == NULL))
     {
-        return o1heapAllocate(handle, new_amount);  // MISRA: Early return is justifiable as it simplifies control flow
+        return o1heapAllocate(handle, new_amount);  // MISRA: Early return simplifies control flow.
     }
-    if (O1HEAP_UNLIKELY(new_amount == 0U))  // Free delegation. Common implementation-defined extension in realloc().
+
+    // SPECIAL CASE: Free delegation. This is a common implementation-defined extension in the standard realloc().
+    if (O1HEAP_UNLIKELY(new_amount == 0U))
     {
         o1heapFree(handle, pointer);
-        return NULL;  // MISRA: Early return is justifiable as it simplifies control flow
+        return NULL;  // MISRA: Early return simplifies control flow.
     }
-    if (O1HEAP_UNLIKELY(new_amount > (handle->diagnostics.capacity - O1HEAP_ALIGNMENT)))  // Prevent size overflow.
+
+    // SPECIAL CASE: Prevent size overflow like in o1heapAllocate().
+    handle->diagnostics.peak_request_size = larger(handle->diagnostics.peak_request_size, new_amount);
+    if (O1HEAP_UNLIKELY(new_amount > (handle->diagnostics.capacity - O1HEAP_ALIGNMENT)))
     {
-        if (O1HEAP_LIKELY(handle->diagnostics.peak_request_size < new_amount))
-        {
-            handle->diagnostics.peak_request_size = new_amount;
-        }
         handle->diagnostics.oom_count++;
-        return NULL;  // MISRA: Early return is justifiable as it simplifies control flow
+        return NULL;  // MISRA: Early return simplifies control flow.
     }
 
     // NORMAL REALLOC BEHAVIORS. The edge cases have been handled above.
@@ -557,7 +558,6 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
     O1HEAP_ASSERT(new_frag_size <= handle->diagnostics.capacity);
     O1HEAP_ASSERT(fragIsUsed(frag));  // Catch use-after-free.
 
-    void*        out       = NULL;
     Fragment*    prev      = fragGetPrev(frag);
     Fragment*    next      = fragGetNext(frag);
     const bool   prev_free = (prev != NULL) && (!fragIsUsed(prev));
@@ -592,10 +592,11 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
             O1HEAP_ASSERT(fragGetSize(handle, frag) == new_frag_size);
             O1HEAP_ASSERT(fragGetSize(handle, new_frag) == (next_free ? (leftover + next_size) : leftover));
         }
-        out = pointer;
+        return pointer;  // MISRA: Early return simplifies control flow.
     }
+
     // EXPAND FORWARD: next is free and current+next >= new_frag_size. Data stays in place.
-    else if (next_free && ((frag_size + next_size) >= new_frag_size))
+    if (next_free && ((frag_size + next_size) >= new_frag_size))
     {
         unbin(handle, next);
         const size_t leftover = (frag_size + next_size) - new_frag_size;
@@ -614,20 +615,22 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
             interlink(frag, fragGetNext(next));
             handle->diagnostics.allocated += next_size;
         }
-        out = pointer;
+        handle->diagnostics.peak_allocated = larger(handle->diagnostics.peak_allocated, handle->diagnostics.allocated);
+        return pointer;  // MISRA: Early return simplifies control flow.
     }
+
     // EXPAND BACKWARD AND FORWARD: prev is free; next maybe free; prev+current+next >= new_frag_size.
     // Data must be moved, this is unavoidable because there is not enough space ahead.
     // Note that since the move size is not greater than the current fragment, memmove will not invalidate the next
     // fragment, but it may invalidate the current fragment.
-    else if (prev_free && ((prev_size + frag_size + next_size) >= new_frag_size))
+    if (prev_free && ((prev_size + frag_size + next_size) >= new_frag_size))
     {
         unbin(handle, prev);
         if (next_free)
         {
             unbin(handle, next);
         }
-        out = ((char*) prev) + O1HEAP_ALIGNMENT;   // Move all the way to the back before we setup new fragments.
+        void* const out = ((char*) prev) + O1HEAP_ALIGNMENT;  // Move all the way to the back before fragments updated.
         (void) memmove(out, pointer, old_amount);  // ATTENTION: Invalidates the old frag due to potential overwrite.
         fragSetUsed(prev, true);
         const size_t leftover = (prev_size + frag_size + next_size) - new_frag_size;
@@ -646,26 +649,17 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
             interlink(prev, next_free ? fragGetNext(next) : next);
             handle->diagnostics.allocated += prev_size + next_size;
         }
-    }
-    // ALLOCATE NEW BLOCK: copy data, free old block. In-place or near-place expansion not possible.
-    // This is the final resort. The normal allocate also handles the OOM count update.
-    else
-    {
-        out = o1heapAllocate(handle, new_amount);
-        if (out != NULL)
-        {
-            (void) memcpy(out, pointer, old_amount);
-            o1heapFree(handle, pointer);
-        }
+        handle->diagnostics.peak_allocated = larger(handle->diagnostics.peak_allocated, handle->diagnostics.allocated);
+        return out;  // MISRA: Early return simplifies control flow.
     }
 
-    if (O1HEAP_LIKELY(handle->diagnostics.peak_request_size < new_amount))
+    // ALLOCATE NEW BLOCK: copy data, free old block. In-place or near-place expansion not possible.
+    // This is the final resort. The normal allocate also handles the OOM count update.
+    void* const out = o1heapAllocate(handle, new_amount);
+    if (out != NULL)
     {
-        handle->diagnostics.peak_request_size = new_amount;
-    }
-    if (O1HEAP_LIKELY(handle->diagnostics.peak_allocated < handle->diagnostics.allocated))
-    {
-        handle->diagnostics.peak_allocated = handle->diagnostics.allocated;
+        (void) memcpy(out, pointer, old_amount);
+        o1heapFree(handle, pointer);
     }
     return out;
 }

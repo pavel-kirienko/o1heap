@@ -295,6 +295,7 @@ expanded in-place. See the API docs for details.
 
 The trace events introduced in v2.2 have been removed due to unclean integration and relative lack of use.
 They may reappear in a future version, perhaps designed differently.
+For now, if this feature is of interest, either use custom wrappers or stick to v2.2.
 
 This revision also adds a simple native performance test suite for RP2350.
 Similar suites for other targets may appear later.
