@@ -50,7 +50,7 @@ Avoid concurrent access to the heap. Use locking if necessary.
 
 ### Example
 
-```c
+```c++
 #include "o1heap.h"
 #include <stdalign.h>
 
@@ -62,10 +62,10 @@ int main(void)
     if (heap == NULL) {
         return 1;  // Initialization failed -- arena not aligned or too small
     }
-    void* ptr = o1heapAllocate(heap, 200);
+    void* ptr = o1heapAllocate(heap, 200);  // Always takes the same time to complete.
     if (ptr != NULL) {
         // Use the allocated memory...
-        o1heapFree(heap, ptr);
+        o1heapFree(heap, ptr);  // Also constant-time!
     }
     return 0;
 }

@@ -341,17 +341,18 @@ TEST_CASE("Exhaustive: realloc edge cases")
             bytes[i] = static_cast<std::uint8_t>(i & 0xFFU);
         }
 
-        // Shrink to need only 64-byte fragment.
-        void* result = o1heapReallocate(heap, ptr, 20);
+        // Shrink to need a smaller fragment.
+        // Use 32 bytes to get 64-byte fragment on both x64 (32+16=48->64) and x32 (32+8=40->64).
+        void* result = o1heapReallocate(heap, ptr, 32);
         REQUIRE(result == ptr);  // Same pointer for shrink!
 
         const auto after = o1heapGetDiagnostics(heap);
-        REQUIRE(after.allocated == 64);  // Shrunk from 256 to 64.
+        REQUIRE(after.allocated == computeFragmentSize(32));  // Shrunk from 256 to 64.
         REQUIRE(o1heapDoInvariantsHold(heap));
 
-        // Verify first 20 bytes preserved.
+        // Verify first 32 bytes preserved.
         bytes = static_cast<std::uint8_t*>(result);
-        for (std::size_t i = 0; i < 20; i++)
+        for (std::size_t i = 0; i < 32; i++)
         {
             REQUIRE(bytes[i] == static_cast<std::uint8_t>(i & 0xFFU));
         }

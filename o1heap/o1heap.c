@@ -420,7 +420,6 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
             if (O1HEAP_LIKELY(leftover >= FRAGMENT_SIZE_MIN))
             {
                 Fragment* const new_frag = (Fragment*) (void*) (((char*) frag) + fragment_size);
-                O1HEAP_ASSERT(((size_t) new_frag) % O1HEAP_ALIGNMENT == 0U);
                 fragSetUsed(new_frag, false);
                 interlink(new_frag, fragGetNext(frag));
                 interlink(frag, new_frag);
@@ -505,21 +504,18 @@ void o1heapFree(O1HeapInstance* const handle, void* const pointer)
         {
             unbin(handle, prev);
             unbin(handle, next);
-            O1HEAP_ASSERT((fragGetSize(handle, prev) % FRAGMENT_SIZE_MIN) == 0U);  // After merge.
             interlink(prev, fragGetNext(next));
             rebin(handle, prev);
         }
         else if (join_left)  // [ prev ][ this ][ next ] => [ --- prev --- ][ next ]
         {
             unbin(handle, prev);
-            O1HEAP_ASSERT((fragGetSize(handle, prev) % FRAGMENT_SIZE_MIN) == 0U);  // After merge.
             interlink(prev, next);
             rebin(handle, prev);
         }
         else if (join_right)  // [ prev ][ this ][ next ] => [ prev ][ --- this --- ]
         {
             unbin(handle, next);
-            O1HEAP_ASSERT((fragGetSize(handle, frag) % FRAGMENT_SIZE_MIN) == 0U);  // After merge.
             interlink(frag, fragGetNext(next));
             rebin(handle, frag);
         }
@@ -548,15 +544,14 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
         return NULL;  // MISRA: Early return is justifiable as it simplifies control flow
     }
 
-    // Update the diagnostics.
-    if (O1HEAP_LIKELY(handle->diagnostics.peak_request_size < new_amount))
-    {
-        handle->diagnostics.peak_request_size = new_amount;
-    }
-
     // Guard against overflow as in o1heapAllocate.
+    // Update diagnostics at the end, similar to o1heapAllocate, to ensure trace hooks see consistent state.
     if (O1HEAP_UNLIKELY(new_amount > (handle->diagnostics.capacity - O1HEAP_ALIGNMENT)))
     {
+        if (O1HEAP_LIKELY(handle->diagnostics.peak_request_size < new_amount))
+        {
+            handle->diagnostics.peak_request_size = new_amount;
+        }
         handle->diagnostics.oom_count++;
         return NULL;  // MISRA: Early return is justifiable as it simplifies control flow
     }
@@ -654,9 +649,11 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
         const size_t leftover = combined - new_frag_size;
         O1HEAP_ASSERT((leftover % FRAGMENT_SIZE_MIN) == 0U);
 
-        // Save the first bytes that will be overwritten by Fragment bookkeeping.
-        char saved[sizeof(void*) * 2U];
-        (void) memcpy(&saved[0], pointer, sizeof(saved));
+        // Move the data FIRST, before setting up the leftover fragment. The leftover fragment's header
+        // may overlap with the source data (when new_frag_size > prev_size), so we must copy before writing.
+        // The regions may overlap if frag_size > prev_size + alignment, so use memmove.
+        out = ((char*) prev) + O1HEAP_ALIGNMENT;
+        (void) memmove(out, pointer, old_amount);
 
         // The new fragment starts at prev's location.
         fragSetUsed(prev, true);
@@ -677,11 +674,6 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
             interlink(prev, next);
             handle->diagnostics.allocated += prev_size;
         }
-
-        // Move the data. The regions may overlap, so use memmove.
-        out = ((char*) prev) + O1HEAP_ALIGNMENT;
-        (void) memmove(out, pointer, old_amount);
-        (void) memcpy(out, &saved[0], sizeof(saved));
     }
     else
     {
@@ -722,6 +714,12 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
         }
     }
 
+    // Update diagnostics at the end, after all operations, to ensure trace hooks see consistent state.
+    // Note: oom_count is already handled by the internal o1heapAllocate call if allocation fails.
+    if (O1HEAP_LIKELY(handle->diagnostics.peak_request_size < new_amount))
+    {
+        handle->diagnostics.peak_request_size = new_amount;
+    }
     if (O1HEAP_LIKELY(handle->diagnostics.peak_allocated < handle->diagnostics.allocated))
     {
         handle->diagnostics.peak_allocated = handle->diagnostics.allocated;

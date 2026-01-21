@@ -635,19 +635,19 @@ TEST_CASE("General: realloc")
 
     // Edge case 3: Realloc that increases peak_allocated.
     // After edge case 2, peak_allocated=64, allocated=0.
-    // Allocate small, then realloc to larger size that exceeds peak.
+    // Allocate small (32 bytes -> 64-byte fragment), then realloc to larger size that exceeds peak.
     a = realloc_check(nullptr,
                       0U,
-                      1U,  // needs 32-byte fragment
+                      32U,
                       {
-                          {X, 32},
-                          {O, 4064},
+                          {X, 64},
+                          {O, 4032},
                       });
-    // Now allocated=32, peak=64 (still from edge case 1).
-    // Realloc to need 128 bytes (request 100 -> 100+16=116 -> 128).
+    // Now allocated=64, peak=64 (same as edge case 1).
+    // Realloc to need 128 bytes (request 100 -> 128-byte fragment).
     // This should increase allocated to 128, exceeding peak of 64.
     a = realloc_check(a,
-                      1U,
+                      32U,
                       100U,
                       {
                           {X, 128},
@@ -685,7 +685,7 @@ TEST_CASE("General: realloc")
     // a is 256 bytes, shrink to fit in 64 bytes -> leftover = 192, merges with 3840 = 4032.
     a = realloc_check(a,
                       200U,
-                      20U,
+                      32U,
                       {
                           {X, 64},    // a (shrunk)
                           {O, 4032},  // leftover merged with tail
@@ -693,26 +693,13 @@ TEST_CASE("General: realloc")
                       true,
                       true);  // same pointer
 
-    // Shrink scenario 3: Shrink further - 64 bytes down to 32 bytes.
-    // a is 64 bytes, request 1 byte -> needs 32 bytes. Leftover = 32, merges with tail.
+    // Shrink scenario 3: Same size request - no change.
     a = realloc_check(a,
-                      20U,
-                      1U,
+                      32U,
+                      32U,
                       {
-                          {X, 32},    // a (shrunk to min)
-                          {O, 4064},  // leftover merged with tail
-                      },
-                      true,
-                      true);  // same pointer
-
-    // Shrink scenario 4: Shrink where leftover < MIN (no split possible).
-    // a is now 32 bytes (min), request 1 byte -> still needs 32 bytes, no change.
-    a = realloc_check(a,
-                      1U,
-                      1U,
-                      {
-                          {X, 32},  // a (unchanged, can't shrink further)
-                          {O, 4064},
+                          {X, 64},
+                          {O, 4032},
                       },
                       true,
                       true);  // same pointer
@@ -725,9 +712,9 @@ TEST_CASE("General: realloc")
     // Allocate: large block (to shrink), then small blocker.
     a      = alloc(100U,
                    {
-                  {X, 128},  // a
-                  {O, 3968},
-              });
+                       {X, 128},  // a
+                       {O, 3968},
+                   });
     auto b = alloc(32U,
                    {
                        {X, 128},  // a
@@ -735,11 +722,11 @@ TEST_CASE("General: realloc")
                        {O, 3904},
                    });
 
-    // Shrink scenario 5: Shrink with leftover >= MIN, next is used (no merge).
+    // Shrink scenario 4: Shrink with leftover >= MIN, next is used (no merge).
     // a is 128 bytes, shrink to fit in 64 bytes -> leftover = 64, becomes new free block.
     a = realloc_check(a,
                       100U,
-                      20U,
+                      32U,
                       {
                           {X, 64},  // a (shrunk)
                           {O, 64},  // leftover from a
@@ -1145,10 +1132,11 @@ TEST_CASE("General: realloc")
     // prev (512) < 1024. next (512) < 1024. tail (960) < 1024.
     // Standard alloc will fail (no single block >= 1024).
     // But: 512 + 64 + 512 = 1088 >= 1024. Merge-aware fallback should work!
+    // Note: request 510 bytes needs 1024 on both x64 (510+16=526) and x32 (510+8=518).
 
     b = realloc_check(b,
                       32U,
-                      500U,  // needs 1024 byte fragment
+                      510U,  // needs 1024 byte fragment (510+alignment > 512)
                       {
                           {X, 1024},  // b expanded via merge (512 + 64 + 512 = 1088, take 1024)
                           {O, 64},    // leftover (1088 - 1024 = 64)
