@@ -3,6 +3,27 @@
 Simple firmware for an RP2350 (Pico 2) that measures the CPU cycles required to allocate and free a fixed-size block from O1Heap.
 Results are printed over UART0 (GPIO0 TX).
 
+## Sample output from RP2350
+
+O1Heap:
+
+```
+op      bytes        min       mean        max      count
+alloc   total         91        122        126   20000000
+free    total         52         82        116   20000000
+```
+
+Newlib malloc/free:
+
+```
+op      bytes        min       mean        max      count
+alloc   total        100        136       2014   20000000
+free    total         58         94        234   20000000
+```
+
+The happy case is comparable for both; the mean is about 10% better for O1Heap;
+the worst-case is about 1500% better for O1Heap.
+
 ## Build
 
 ```sh
