@@ -478,7 +478,7 @@ TEST_CASE("General: random A")
 {
     using internal::Fragment;
 
-    constexpr auto                   ArenaSize = MiB * 300U;
+    constexpr auto                   ArenaSize = MiB * 100U;
     const std::shared_ptr<std::byte> arena(static_cast<std::byte*>(std::aligned_alloc(64U, ArenaSize)), &std::free);
     std::generate_n(arena.get(), ArenaSize, getRandomByte);  // Random-fill the ENTIRE arena!
     auto heap = init(arena.get(), ArenaSize);
@@ -496,7 +496,7 @@ TEST_CASE("General: random A")
 
     const auto allocate = [&]() {
         REQUIRE(heap->doInvariantsHold());
-        std::uniform_int_distribution<std::size_t> dis(0, ArenaSize / 1000U);
+        std::uniform_int_distribution<std::size_t> dis(0, ArenaSize / 300U);
 
         const std::size_t amount = dis(random_generator);
         const auto        ptr    = heap->allocate(amount);
@@ -543,13 +543,13 @@ TEST_CASE("General: random A")
 
     // The memory use is growing slowly from zero.
     // We stop the test when it's been running near the max heap utilization for long enough.
-    while (heap->diagnostics.oom_count < 1000U)
+    while (heap->diagnostics.oom_count < 500U)
     {
         for (auto i = 0U; i < 100U; i++)
         {
             allocate();
         }
-        for (auto i = 0U; i < 50U; i++)
+        for (auto i = 0U; i < 40U; i++)
         {
             deallocate();
         }

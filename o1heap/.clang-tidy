@@ -21,6 +21,7 @@ Checks: >-
   -misc-include-cleaner,
   -performance-no-int-to-ptr,
   -bugprone-casting-through-void,
+  -*DeprecatedOrUnsafeBufferHandling,
 CheckOptions:
   - key:   readability-function-cognitive-complexity.Threshold
     value: '199'

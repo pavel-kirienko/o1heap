@@ -296,6 +296,9 @@ The trade-off is believed to be justifiable for most applications.
 If you want to squeeze maximum allocation performance at the cost of a higher memory overhead and a marginal
 deallocation slowdown, consider using v2 instead -- there are no known issues with that version.
 
+`o1heapReallocate` is added, which is constant-complexity except for the case when the old fragment cannot be
+expanded in-place. See the API docs for details.
+
 This revision also adds a simple native performance test suite for RP2350.
 Similar suites for other targets may appear later.
 

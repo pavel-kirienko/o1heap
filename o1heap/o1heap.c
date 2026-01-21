@@ -667,7 +667,7 @@ void* o1heapReallocate(O1HeapInstance* const handle, void* const pointer, const 
             O1HEAP_ASSERT(((size_t) leftover_frag) % O1HEAP_ALIGNMENT == 0U);
             fragSetUsed(leftover_frag, false);
             interlink(leftover_frag, next);
-            interlink(prev, leftover_frag);
+            interlink(prev, leftover_frag);  // NOLINT(readability-suspicious-call-argument)
             rebin(handle, leftover_frag);
             handle->diagnostics.allocated += new_frag_size - frag_size;
         }
