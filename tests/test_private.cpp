@@ -19,7 +19,6 @@
 TEST_CASE("Private: log2")
 {
     using internal::log2Floor;
-    using internal::log2Ceil;
     // The function is only defined for x>=1.
     REQUIRE(log2Floor(1) == 0);
     REQUIRE(log2Floor(2) == 1);
@@ -28,15 +27,6 @@ TEST_CASE("Private: log2")
     REQUIRE(log2Floor(30) == 4);
     REQUIRE(log2Floor(60) == 5);
     REQUIRE(log2Floor(64) == 6);
-
-    REQUIRE(log2Ceil(0) == 0);  // Special case.
-    REQUIRE(log2Ceil(1) == 0);
-    REQUIRE(log2Ceil(2) == 1);
-    REQUIRE(log2Ceil(3) == 2);
-    REQUIRE(log2Ceil(4) == 2);
-    REQUIRE(log2Ceil(30) == 5);
-    REQUIRE(log2Ceil(60) == 6);
-    REQUIRE(log2Ceil(64) == 6);
 }
 
 TEST_CASE("Private: pow2")
@@ -56,7 +46,6 @@ TEST_CASE("Private: pow2")
 
 TEST_CASE("Private: roundUpToPowerOf2")
 {
-    using internal::log2Ceil;
     using internal::pow2;
     using internal::roundUpToPowerOf2;
     // The function is only defined for x>=2.
@@ -79,8 +68,4 @@ TEST_CASE("Private: roundUpToPowerOf2")
     REQUIRE(roundUpToPowerOf2(32) == 32);
     REQUIRE(roundUpToPowerOf2(2147483647U) == 2147483648U);
     REQUIRE(roundUpToPowerOf2(2147483648U) == 2147483648U);
-    for (auto i = 2U; i < 1'000'000; i++)
-    {
-        REQUIRE(pow2(log2Ceil(i)) == roundUpToPowerOf2(i));
-    }
 }

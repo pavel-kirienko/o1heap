@@ -168,13 +168,6 @@ O1HEAP_PRIVATE uint_fast8_t log2Floor(const size_t x)
     return (uint_fast8_t) (((sizeof(x) * CHAR_BIT) - 1U) - ((uint_fast8_t) O1HEAP_CLZ(x)));
 }
 
-/// Special case: if the argument is zero, returns zero.
-O1HEAP_PRIVATE uint_fast8_t log2Ceil(const size_t x)
-{
-    // NOLINTNEXTLINE redundant cast to the same type.
-    return (x <= 1U) ? 0U : (uint_fast8_t) ((sizeof(x) * CHAR_BIT) - ((uint_fast8_t) O1HEAP_CLZ(x - 1U)));
-}
-
 /// Raise 2 into the specified power.
 /// You might be tempted to do something like (1U << power). WRONG! We humans are prone to forgetting things.
 /// If you forget to cast your 1U to size_t or ULL, you may end up with undefined behavior.
@@ -400,7 +393,11 @@ void* o1heapAllocate(O1HeapInstance* const handle, const size_t amount)
         O1HEAP_ASSERT(alloc_size >= amount + O1HEAP_ALIGNMENT);
         O1HEAP_ASSERT((alloc_size & (alloc_size - 1U)) == 0U);  // Is power of 2.
 
-        const uint_fast8_t optimal_bin_index = log2Ceil(alloc_size / FRAGMENT_SIZE_MIN);  // Use CEIL when fetching.
+        // Since alloc_size and FRAGMENT_SIZE_MIN are both powers of 2, the quotient is also a power of 2,
+        // meaning log2Ceil == log2Floor. We use log2Floor because it is slightly faster (no x-1 before CLZ).
+        const size_t alloc_bins = alloc_size / FRAGMENT_SIZE_MIN;
+        O1HEAP_ASSERT((alloc_bins & (alloc_bins - 1U)) == 0U);         // Is power of 2 => log2Ceil == log2Floor.
+        const uint_fast8_t optimal_bin_index = log2Floor(alloc_bins);  // Should be ceil, but in this case identical.
         O1HEAP_ASSERT(optimal_bin_index < NUM_BINS_MAX);
         const size_t candidate_bin_mask = ~(pow2(optimal_bin_index) - 1U);
 
