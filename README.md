@@ -211,44 +211,8 @@ $F^\prime{}(r) = F(r) - a$.
 The amount of the overhead per allocation and, therefore, pointer alignment is 2×(pointer width);
 e.g., for a 32-bit platform, the overhead/alignment is 8 bytes (64 bits).
 
-From the above follows that $F(r) \ge 2 a$.
-Remember that $r>0$ -- following the semantics of `malloc(..)`,
-the allocator returns a null pointer if a zero-sized allocation is requested.
-
-It has been mentioned that the abstract definition of $H$ does not take into account the
-implementation-specific overheads.
-Said overheads should be considered when calculating the amount memory needed for a specific application.
-We define a refined worst-case memory consumption (WCMC) model below.
-
-$$
-n_f = \lceil{} \frac{n}{l} \rceil{}
-$$
-
-$$
-M_f = \lceil{} \frac{M}{l} \rceil{}
-$$
-
-$$
-k = M_f - n_f + 1
-$$
-
-Where $l$ -- the smallest amount of memory that may be requested by the application;
-$n_f$ -- the size of the largest allocation expressed as the number of min-size fragments;
-$M_f$ -- the total amount of heap space that may be requested by the application in min-size fragments;
-$k$ -- the maximum number of fragments.
-The worst case number of min-size memory fragments required is $H_f(M_f,n_f) = H(M_f,n_f)$.
-The total amount of space needed to accommodate the per-fragment overhead is $k\times{}a$.
-Then, the total WCMC, expressed in bytes, is:
-
-$$
-H_b(M,n,l,a) = a \ k + \frac{ 2 \ l \ n \ M_f \ (\lceil{} log_2 \ n_f \rceil{} + 1) }{ l+n }
-$$
-
-**The above equation should be used for sizing the heap space.**
-Observe that the case of $l=n$ degenerates to the standard fixed-size block allocator.
-
 The following illustration shows the worst-case memory consumption (WCMC) for some common memory sizes;
-as explained above, $l$ is chosen by the application designer freely,
+$l$ is the smallest amount of memory that may be requested by the application,
 and $a$ is the value of `O1HEAP_ALIGNMENT` which is platform-dependent:
 
 ![WCMC](docs/H.png "Total worst-case memory consumption (H) as a function of max fragment size (n) and total memory need (M)")
